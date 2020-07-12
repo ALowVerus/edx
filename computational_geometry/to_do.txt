@@ -1,0 +1,19 @@
+s1:
+- check_whether_point_is_contained
+
+s2:
+- check_whether_two_convex_polygons_intersect_linear
+- check_whether_two_convex_polygons_intersect_log
+- get_intersection_area_sweepline
+- get_intersection_area_chasing
+- count_segment_intersections > sweepline_solve
+
+s3:
+- implementing triangulation
+- implementing triangulation in log log n time, via Tarjan's algo
+- implementing triangulation in log * n, via Tarjan v2.0
+- what is a Steiner point?
+
+s4:
+- implementing DCEL
+
