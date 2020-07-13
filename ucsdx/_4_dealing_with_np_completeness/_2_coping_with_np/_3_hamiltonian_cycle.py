@@ -32,7 +32,7 @@ def print_answer(path_weight, path):
 
 
 # Find a path through the converted graph
-def bellman_held_karp(graph):
+def bellman_held_karp(graph, get_max=False):
     n = len(graph)
     # Instantiate an array to hold referral information
     array = [[None for i in range(n)] for j in range(2 ** n)]
@@ -61,7 +61,9 @@ def bellman_held_karp(graph):
                         if array[i ^ (2 ** j)][k] is not None:
                             # We can visit this subset.
                             # If the current cell value is None or less that the generated value, overwrite.
-                            if array[i][j] is None or array[i][j][0] > array[i ^ (2 ** j)][k][0] + graph[j][k]:
+                            if array[i][j] is None or \
+                                    (not get_max and array[i][j][0] > array[i ^ (2 ** j)][k][0] + graph[j][k]) or \
+                                    (get_max and array[i][j][0] < array[i ^ (2 ** j)][k][0] + graph[j][k]):
                                 array[i][j] = (array[i ^ (2 ** j)][k][0] + graph[j][k], k)
     # If any of the items in the final set, which represents the full set, are True, we found a good end.
     for j in range(n):
@@ -78,7 +80,7 @@ def bellman_held_karp(graph):
 
 
 # The deterministic Bellman-Held-Karp algo, with its n^2 * 2^n complexity, never fails.
-def get_minimum_hamiltonian_cycle(graph):
+def get_hamiltonian_cycle(graph, get_max=False):
     # Convert graph keys to integers
     keys_to_integers = {}
     n = 0
@@ -110,7 +112,8 @@ def get_minimum_hamiltonian_cycle(graph):
     converted_graph[n - 1][n + 2] = 0
     converted_graph[n + 2][n - 1] = 0
 
-    res = bellman_held_karp(converted_graph)
+    res = bellman_held_karp(converted_graph, get_max=get_max)
+
     if res is None:
         return None
     else:
@@ -123,7 +126,7 @@ def get_minimum_hamiltonian_cycle(graph):
 
 
 def optimal_path(graph):
-    res = get_minimum_hamiltonian_cycle(graph)
+    res = get_hamiltonian_cycle(graph)
     return (-1, []) if res is None else res
 
 
