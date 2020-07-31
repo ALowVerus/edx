@@ -1,52 +1,224 @@
 from collections import deque
 from computational_geometry.s1_convex_hull.hull_methods_2d import is_ccw_turn
-from computational_geometry.s4_voronoi.dcel import *
+from computational_geometry.dcel import *
+from computational_geometry.b_tree_generic import RedBlackTree
+from cs1lib import *
 
 
-def generate_monotone_sections(polygon_points):
+def generate_monotone_sections(outer_face):
     """
     This function takes in a polygon and returns a list of sections monotone with respect to x.
     It also returns a list of the segments required to generate those sections from the input polygon.
     """
-    # Organize the points by their x values.
-    points = sorted(polygon_points)
-    # Convert the points into a DCEL, for easy partitioning and addition of extra pieces during section-finding.
-    # Generate a heap of stalagtites, i.e. those points which have both sides pointed onwards.
-    """
-    h = SegmentHeap()
-    for v in vertices:
-        top_line, bot_line = line to the right, line to the left
-        if top_line and bot_line point inwards:
-            add v to the heap of stalagitites to be managed
-    """
-    # Generate a BBST to hold in-progress sets.
-    """
-    class RedBlackSegmentSearchTree:
-        def init
-        def add_segment
-        def remove_segment
-    t = RedBlackSegmentSearchTree()
-    """
-    # While there are sections unprocessed...
-    """
-    while 
-        # Approach the point with the lowest yet-unhit x
-        seg = h.pop()
-        # If a stalagtite is met, either generate a new BBST object or merge two existing objects.
-        if seg is a stalagtite:
-            merge the contained BBST object
-            if there were BBST objects above / to the sides, complete one and merge the other into its place
-        # If a stalagmite is met, either complete a BBST object or split into two new objects.
-        elif seg is a stalagmite:
-            generate a new section underneath the stalagmite
-            if there was a section above it, split that section into two
-        # If a non-stalagmite non-stalagtite is met, simply move on.
-        else:
-            pass and add a child to the heap
-    """
-    # Return a reference to a node on the hull of the polygon,
-    # along with a list of all the inner items that must now be triangulated.
-    return [], []
+    is_source = lambda e: e.dx > 0 and e.pred.dx < 0 and e.is_ccw_turn
+    is_sink = lambda e: e.dx < 0 and e.pred.dx > 0 and e.is_ccw_turn
+    is_l_progress = lambda e: e.dx < 0 and e.pred.dx < 0
+    is_r_progress = lambda e: e.dx > 0 and e.pred.dx > 0
+    is_stalagmite = lambda e: e.dx > 0 and e.pred.dx < 0 and not e.is_ccw_turn
+    is_stalactite = lambda e: e.dx < 0 and e.pred.dx > 0 and not e.is_ccw_turn
+
+    # Get the initial inner face
+    inner_face = outer_face.inc.twin.face
+    inner_face_edges = inner_face.border
+
+    sources = [edge for edge in inner_face_edges if is_source(edge)]
+    sinks = [edge for edge in inner_face_edges if is_sink(edge)]
+    l_progress = [edge for edge in inner_face_edges if is_l_progress(edge)]
+    r_progress = [edge for edge in inner_face_edges if is_r_progress(edge)]
+    stalagmites = [edge for edge in inner_face_edges if is_stalagmite(edge)]
+    stalactites = [edge for edge in inner_face_edges if is_stalactite(edge)]
+
+    print(len(sources), "sources")
+    print(len(sinks), "sinks")
+    print(len(l_progress), "l_prog")
+    print(len(r_progress), "r_prog")
+    print(len(stalagmites), "stalagmites")
+    print(len(stalactites), "stalactites")
+
+    sources_ids = {id(edge) for edge in sources}
+    sinks_ids = {id(edge) for edge in sinks}
+    l_progress_ids = {id(edge) for edge in l_progress}
+    r_progress_ids = {id(edge) for edge in r_progress}
+    stalagmites_ids = {id(edge) for edge in stalagmites}
+    stalactites_ids = {id(edge) for edge in stalactites}
+
+    for edge in inner_face_edges:
+        if sum([id(edge) in l for l in [sources_ids, sinks_ids,
+                                        l_progress_ids, r_progress_ids,
+                                        stalactites_ids, stalagmites_ids]]) != 1:
+            raise Exception("{} qualified multiple times.".format(str(edge)))
+
+    def draw_points_by_type():
+        set_stroke_color(0, 1, 0)
+        for edge in sources:
+            edge.origin.draw()
+        set_stroke_color(0, 1, 1)
+        for edge in sinks:
+            edge.origin.draw()
+        set_stroke_color(1, 0, 1)
+        for edge in l_progress:
+            edge.origin.draw()
+        set_stroke_color(1, 1, 1)
+        for edge in r_progress:
+            edge.origin.draw()
+        set_stroke_color(1, 0, 0)
+        for edge in stalagmites:
+            edge.origin.draw()
+        set_stroke_color(0, 0, 1)
+        for edge in stalactites:
+            edge.origin.draw()
+        set_stroke_color(0, 0, 0)
+
+    def monotonize_forward(face):
+        # Categorize points (which are associated with half-edges)
+        edges = face.border
+        # Generate a BBST to hold the parts as they occur.
+        # Use a data structure accessible from the outside to manage order checks.
+        class X_Holder:
+            def __init__(self):
+                self.x = None
+        x_holder = X_Holder()
+        def cmp(a, b):
+            a_left, a_helper, a_right = a
+            b_left, b_helper, b_right = b
+            x = x_holder.x
+            if a_right.plot(x) < b_left.plot(x):
+                return 1
+            elif b_right.plot(x) < a_left.plot(x):
+                return -1
+            else:
+                return 0
+        t = RedBlackTree(cmp=cmp)
+        d = {}
+        print()
+        # Process each event
+        for edge in sorted(edges, key=lambda e: (e.origin.x, e.origin.y)):
+            ex, ey = edge.origin.x, edge.origin.y
+            x_holder.x = ex
+            # Approach the point with the lowest yet-unhit x
+            t.print_tree()
+            # If a source is met, either generate a new BBST object
+            if is_source(edge):
+                # Set the side edges to a newly-generated trapezoid
+                new_node = t.insert([edge.pred, edge, edge])
+                d[id(edge.pred)] = d[id(edge.succ)] = new_node
+            # If a sink is met, kill a BBST object
+            elif is_sink(edge):
+                print("Killing the sink at", ey, ex)
+                # Delete the trapezoid from the data structure
+                d[id(edge)].delete()
+                d.pop(id(edge))
+            # If left progress is met, move the left side of the appropriate BBST object
+            elif is_l_progress(edge):
+                print("Left!")
+                if id(edge) not in d:
+                    print("Could not find edge.")
+                else:
+                    # Find the trapezoid supported by incoming edge in the data structure
+                    node = d[id(edge)]
+                    left, helper, right = node.value
+                    d.pop(id(left))
+                    # Change the left edge to the successor of its current value
+                    node.value = [edge.pred, edge, right]
+                    # Set the helper to the newly-hit point
+                    d[id(edge.pred)] = d[id(right.succ)] = node
+            # If right progress is met, move the right side of the appropriate BBST object
+            elif is_r_progress(edge):
+                print("Right!")
+                if id(edge) not in d:
+                    print("Could not find edge.")
+                else:
+                    # Find the trapezoid supported by incoming edge in the data structure
+                    node = d[id(edge)]
+                    left, helper, right = node.value
+                    d.pop(id(right.succ))
+                    # Change the left edge to the successor of its current value
+                    node.value = [left, edge, edge]
+                    # Set the helper to the newly-hit point
+                    d[id(left)] = d[id(edge.succ)] = node
+            # If a stalagmite is met, split an existing trapezoid
+            elif is_stalagmite(edge):
+                # Pop the trapezoid at hand from the data structure
+                node = t.head
+                while node is not None and ey < node.value[0].plot(ex) or ey > node.value[2].plot(ex):
+                    if ey < node.value[0].plot(ex):
+                        node = node.left
+                    elif ey > node.value[2].plot(ex):
+                        node = node.right
+                if node is None:
+                    raise Exception("You have been unable to find where the given stalagmite rests.")
+                left, helper, right = node.value
+                node.delete()
+                d.pop(id(left))
+                d.pop(id(right.succ))
+                node_left = t.insert([left, edge, edge])
+                node_right = t.insert([edge.pred, edge, right])
+                d[id(left)]      = d[id(edge.succ)]  = node_left
+                d[id(edge.pred)] = d[id(right.succ)] = node_right
+                print("FOUND IT!", str(left), str(right))
+                # Generate two new half-edges in the graph so as to enclose the newly-generated subspace
+                pr, rp = DCEL.generate_half_edge_pair(helper.origin, edge.origin)
+                # Insert on the helper
+                helper.pred.succ = pr
+                pr.pred = helper.pred
+                helper.pred = rp
+                rp.succ = helper
+                # Insert on the new edge
+                edge.pred.succ = rp
+                rp.pred = edge.pred
+                edge.pred = pr
+                pr.succ = edge
+                print("Newly-generated edges are", str(pr), str(rp))
+                # Generate two new entries in the data structure, one to the right, one to the left of the stalagmite point
+                # Set the helper for both sides to the split point
+                pass
+            # If a stalactite is met, merge two trapezoids into one
+            elif is_stalactite(edge):
+                # Pop the trapezoid at hand from the data structure
+                node = t.head
+                while node is not None and ey < node.value[0].plot(ex) or ey > node.value[2].plot(ex):
+                    if ey < node.value[0].plot(ex):
+                        node = node.left
+                    elif ey > node.value[2].plot(ex):
+                        node = node.right
+                if node is None:
+                    raise Exception("You have been unable to find where the given stalactite rests.")
+                elif str(node.value[0]) == str(edge):
+                    left_side_node, right_side_node = node.left, node
+                elif str(node.value[2].succ) == str(edge):
+                    left_side_node, right_side_node = node, node.right
+                else:
+                    raise Exception("Your chosen side did not have a pairing match.")
+                print("Stalactite at", str(edge.origin), str(edge))
+                print("L:", [str(item) for item in left_side_node.value])
+                print("R:", [str(item) for item in right_side_node.value])
+                # Merge, but make no cut.
+                # You can proceed along a reversed image of the polygon to generate cuts in the reverse direction.
+                d.pop(id(right_side_node.value[0]))
+                right_side_node.value = [left_side_node.value[0], edge, right_side_node.value[2]]
+                print("F:", [str(item) for item in right_side_node.value])
+                left_side_node.delete()
+                d[id(right_side_node.value[0])] = d[id(right_side_node.value[2].succ)] = right_side_node
+            # If a non-stalagmite non-stalagtite is met, simply move on.
+            else:
+                raise Exception("Invalid point & edge.", str(edge))
+            print(str(edge.origin))
+            for idn, node in d.items():
+                print('\t', str(obj(idn).origin), [str(edge.origin) for edge in node.value])
+            print('\n\n')
+    # Monotonize one way
+    monotonize_forward(inner_face)
+    # Monotonize each sub-face the other way
+    outer_face.reflect()
+    inner_faces = outer_face.list_contained_faces_from_outer_face()
+    for face in inner_faces:
+        print(len(face.border))
+        monotonize_forward(face)
+    outer_face.reflect()
+    # Reallocate face references
+    outer_face.reallocate_faces_from_outer_face()
+    # Return a reference to a outside face.
+    return draw_points_by_type
 
 
 def monotone_x_triangulate(polygon_points, axis):
@@ -168,3 +340,120 @@ def dcel_to_simple_edge_list():
     This allows the edges to be checked for correct triangulation.
     """
     pass
+
+
+if __name__ == "__main__":
+    test = "generated_example"
+    if test == "generated_example":
+        start = (91, 104)
+        end = (119, 119)
+        points = [
+            (50, 35),
+            (60, 45),
+            (34, 49),
+            (6, 35),
+            (4, 30),
+            (6, 25),
+            (2, 20),
+            (4, 15),
+            (2, 10),
+            (10, 8),
+            (22, 22),
+            (22, 19),
+            (30, 20),
+            (31, 28),
+            (37, 10),
+            (39, 29),
+            (58, 33),
+        ]
+        points = [(y, 50 - x) for y, x in points]
+        print(points)
+    elif test == "stalagmite_test_case":
+        start = (91, 104)
+        end = (119, 119)
+        points = [
+            (34, 5),
+            (6, 15),
+            (10, 42),
+            (25, 25),
+            (37, 40),
+            (58, 17),
+        ]
+        print(points)
+    elif test == "stalagmite_stalactite_test_case":
+        start = (91, 104)
+        end = (119, 119)
+        points = [
+            (104, 129),
+            (76, 118),
+            (90, 100),
+            (95, 110),
+            (92, 99),
+            (100, 100),
+            (101, 108),
+            (107, 90),
+            (109, 109),
+            (128, 113),
+        ]
+        points = [(y - 70, x - 80) for y, x in points]
+    elif test == "actual_example":
+        start = (91, 104)
+        end = (119, 119)
+        points = [
+            (104, 129),
+            (76, 118),
+            (90, 100),
+            (95, 110),
+            (92, 99),
+            (100, 100),
+            (101, 108),
+            (107, 90),
+            (109, 109),
+            (128, 113),
+        ]
+        points = [(y - 70, x - 80) for y, x in points]
+    elif test == "basic_triangle_1":
+        start = (1, 2)
+        end = (2, 3)
+        points = [
+            (0, 0),
+            (0, 2),
+            (4, 2),
+        ]
+    elif test == "basic_triangle_2":
+        start = (1, 2)
+        end = (2, 3)
+        points = [
+            (0, 0),
+            (1, 2),
+            (4, 2),
+        ]
+    elif test == "basic_triangle_3":
+        start = (1, 2)
+        end = (2, 3)
+        points = [
+            (1, 0),
+            (0, 2),
+            (4, 2),
+        ]
+    DCEL.line_side_offset = 5
+    DCEL.end_shortening = 20
+    DCEL.wh_pixels = 800
+    DCEL.adj = 20
+    max_dir = max([y for y, x in points] + [x for x, y in points])
+    DCEL.wh_n = max_dir
+    DCEL.readjust()
+    outer_face = DCEL.generate_dcel_from_coordinates_list(points)
+    draw_points_by_type = generate_monotone_sections(outer_face)
+    new_edge_list = outer_face.generate_full_edge_list_from_outer_face()
+    inner_face = outer_face.inc.twin.face
+    def draw_border():
+        set_stroke_color(0, 0, 0)
+        for line in new_edge_list:
+            line.draw()
+        for line in new_edge_list:
+            line.origin.draw()
+    def draw():
+        draw_border()
+        draw_points_by_type()
+    start_graphics(draw, width=DCEL.wh_pixels, height=DCEL.wh_pixels)

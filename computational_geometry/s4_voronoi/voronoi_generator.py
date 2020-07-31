@@ -1,4 +1,4 @@
-from computational_geometry.s4_voronoi.dcel import DCEL
+from computational_geometry.dcel import DCEL
 from heapq import heappop, heappush
 
 
@@ -55,10 +55,11 @@ def voronoi_generator_fortune(points):
     heap = []
     for p in points:
         heappush(heap, (p, "Site", None))
-    # Generate structures to enable 
+    # Generate structures
+    voronoi_map = None
     # While the heap exists, keep poppin
     while heap:
-        point, attr = heappop(heap)
+        point, event_type, ref = heappop(heap)
 
     return voronoi_map
 
@@ -67,4 +68,4 @@ if __name__ == "__main__":
     from random import randint
     bound = 40
     points = list({(randint(0, bound), randint(0, bound)) for i in range(30)})
-    voronoi_map = voronoi_generator_naive(points)
+    voronoi_map = voronoi_generator_fortune(points)

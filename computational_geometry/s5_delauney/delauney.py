@@ -1,5 +1,5 @@
 import numpy, ctypes
-from computational_geometry.s4_voronoi.dcel import DCEL
+from computational_geometry.dcel import DCEL
 from computational_geometry.s1_convex_hull.hull_methods_2d import is_ccw_turn
 
 

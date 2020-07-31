@@ -2,16 +2,8 @@
 import sys
 
 
-def reconstruct(adj_list):
-    """Reconstructs a string from its k-mer composition
-
-    Args:
-        k:          the length of k-mers in the k-mer composition
-        patterns:   a list of strings containing the k-mer composition
-
-    Returns:
-        A string text with k-mer composition equal to patterns
-    """
+def reconstruct(adj_list, counts_matter=False):
+    """Reconstructs a string from its k-mer composition"""
     # TODO: your code here
     # Validate the graph for the possibility of a cycle
     inverse_adj_list = {}
@@ -43,7 +35,7 @@ def reconstruct(adj_list):
         elif in_degree == out_degree + 1:
             ends.append(key)
         else:
-            raise Exception("Your input adjacency list has no Eulerian path.")
+            return None
     if len(starts) > 1 or len(ends) > 1:
         return None
 
@@ -54,17 +46,14 @@ def reconstruct(adj_list):
     def search_path(key, path, indent=0):
         while len(adj_list[key]) > 0:
             k, v = adj_list[key].popitem()
-            if v > 1:
+            if counts_matter and v > 1:
                 adj_list[key][k] = v - 1
             search_path(k, path, indent + 1)
         path.append(key)
 
     path = []
     # print('Starts, ends:', starts, ends)
-    if len(starts) == 0:
-        search_path(list(adj_list.keys())[0], path)
-    else:
-        search_path(starts[0], path)
+    search_path(list(adj_list.keys())[0], path)
     path.reverse()
     return path
 
@@ -80,21 +69,72 @@ def process_text_to_adj(reads):
     return adjacency_list
 
 
+def get_kmers(k, s):
+    return [s[i:i+k] for i in range(len(s) - k + 1)]
+
+
+testing = False
+from random import choice, randint, shuffle
 if __name__ == "__main__":
-    reads = [line.strip() for line in sys.stdin if line.strip()]
-    k_min = 2
-    k_max = len(reads[0]) + 1
-    while k_min != k_max - 1:
-        k_curr = (k_min + k_max) // 2
-        patterns = []
-        for read in reads:
-            k_mers = [read[i:i+k_curr] for i in range(len(read) - k_curr + 1)]
-            patterns.extend(k_mers)
-        adj = process_text_to_adj(patterns)
-        path = reconstruct(adj)
-        if path is None:
-            k_max = k_curr
+    if not testing:
+        reads = [line.strip() for line in sys.stdin if line.strip()]
+    else:
+        randomly_generating = False
+        if randomly_generating:
+            read_len = 100
+            s_len = 1618
+            read_offset = 2
+            reads_count = 400
+            s = ''.join([choice('ACTG') for i in range(s_len)])
+            reads = [s[i:(i + read_len)] + s[:(i + read_len) % s_len if i + read_len > s_len else 0]
+                     for i in range(0, s_len, read_offset)]
+            shuffle(reads)
+            read_choices = [randint(0, len(reads) - 1) for i in range(reads_count)]
+            reads = [reads[i] for i in read_choices]
         else:
-            k_min = k_curr
-    print(k_min)
+            s = "ATATATATATATATAT"
+            s_len = len(s)
+            read_len = 6
+            read_offset = 2
+            reads = [s[i:(i + read_len)] + s[:(i + read_len) % s_len if i + read_len > s_len else 0]
+                     for i in range(0, s_len, read_offset)]
+            print(reads)
+        print('Testing on string:', s)
+    running_binary_search = False
+    if running_binary_search:
+        k_min = 2
+        k_max = len(reads[0]) + 1
+        hits = 0
+        while k_min != k_max - 1 and hits < 100:
+            hits += 1
+            k_curr = (k_min + k_max) // 2
+            if testing:
+                print('K bounds:', k_min, k_curr, k_max)
+            patterns = []
+            for read in reads:
+                patterns.extend(get_kmers(k_curr, read))
+            adj = process_text_to_adj(patterns)
+            if testing:
+                print(adj)
+            path = reconstruct(adj, counts_matter=False)
+            if path is None:
+                k_max = k_curr
+            else:
+                k_min = k_curr
+        if hits == 100:
+            raise Exception("You've somehow descended into a loop.")
+        print(k_min)
+    else:
+        best_k = 1
+        for k in range(2, len(reads[0]) + 1):
+            patterns = []
+            for read in reads:
+                patterns.extend(get_kmers(k, read))
+            adj = process_text_to_adj(patterns)
+            if testing:
+                print(adj)
+            path = reconstruct(adj, counts_matter=False)
+            if path is not None:
+                best_k = k
+        print(best_k)
 
