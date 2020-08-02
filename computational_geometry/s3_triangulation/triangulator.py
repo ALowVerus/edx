@@ -5,20 +5,21 @@ from computational_geometry.b_tree_generic import RedBlackTree
 from cs1lib import *
 
 
-def generate_monotone_sections(outer_face):
+is_source = lambda e: e.dx > 0 and e.pred.dx < 0 and e.is_ccw_turn
+is_sink = lambda e: e.dx < 0 and e.pred.dx > 0 and e.is_ccw_turn
+is_l_progress = lambda e: e.dx < 0 and e.pred.dx < 0
+is_r_progress = lambda e: e.dx > 0 and e.pred.dx > 0
+is_stalagmite = lambda e: e.dx > 0 and e.pred.dx < 0 and not e.is_ccw_turn
+is_stalactite = lambda e: e.dx < 0 and e.pred.dx > 0 and not e.is_ccw_turn
+
+
+def generate_monotone_sections(dcel):
     """
     This function takes in a polygon and returns a list of sections monotone with respect to x.
     It also returns a list of the segments required to generate those sections from the input polygon.
     """
-    is_source = lambda e: e.dx > 0 and e.pred.dx < 0 and e.is_ccw_turn
-    is_sink = lambda e: e.dx < 0 and e.pred.dx > 0 and e.is_ccw_turn
-    is_l_progress = lambda e: e.dx < 0 and e.pred.dx < 0
-    is_r_progress = lambda e: e.dx > 0 and e.pred.dx > 0
-    is_stalagmite = lambda e: e.dx > 0 and e.pred.dx < 0 and not e.is_ccw_turn
-    is_stalactite = lambda e: e.dx < 0 and e.pred.dx > 0 and not e.is_ccw_turn
-
     # Get the initial inner face
-    inner_face = outer_face.inc.twin.face
+    inner_face = dcel.list_contained_faces()[0]
     inner_face_edges = inner_face.border
 
     sources = [edge for edge in inner_face_edges if is_source(edge)]
@@ -48,26 +49,18 @@ def generate_monotone_sections(outer_face):
                                         stalactites_ids, stalagmites_ids]]) != 1:
             raise Exception("{} qualified multiple times.".format(str(edge)))
 
-    def draw_points_by_type():
-        set_stroke_color(0, 1, 0)
-        for edge in sources:
-            edge.origin.draw()
-        set_stroke_color(0, 1, 1)
-        for edge in sinks:
-            edge.origin.draw()
-        set_stroke_color(1, 0, 1)
-        for edge in l_progress:
-            edge.origin.draw()
-        set_stroke_color(1, 1, 1)
-        for edge in r_progress:
-            edge.origin.draw()
-        set_stroke_color(1, 0, 0)
-        for edge in stalagmites:
-            edge.origin.draw()
-        set_stroke_color(0, 0, 1)
-        for edge in stalactites:
-            edge.origin.draw()
-        set_stroke_color(0, 0, 0)
+    for edge in sources:
+        edge.origin.color = (0, 1, 0)
+    for edge in sinks:
+        edge.origin.color = (0, 1, 1)
+    for edge in l_progress:
+        edge.origin.color = (1, 0, 1)
+    for edge in r_progress:
+        edge.origin.color = (0.8, 0.8, 0)
+    for edge in stalagmites:
+        edge.origin.color = (1, 0, 0)
+    for edge in stalactites:
+        edge.origin.color = (0, 0, 1)
 
     def monotonize_forward(face):
         # Categorize points (which are associated with half-edges)
@@ -157,21 +150,9 @@ def generate_monotone_sections(outer_face):
                 d[id(edge.pred)] = d[id(right.succ)] = node_right
                 print("FOUND IT!", str(left), str(right))
                 # Generate two new half-edges in the graph so as to enclose the newly-generated subspace
-                pr, rp = DCEL.generate_half_edge_pair(helper.origin, edge.origin)
-                # Insert on the helper
-                helper.pred.succ = pr
-                pr.pred = helper.pred
-                helper.pred = rp
-                rp.succ = helper
-                # Insert on the new edge
-                edge.pred.succ = rp
-                rp.pred = edge.pred
-                edge.pred = pr
-                pr.succ = edge
+                pr, rp = DCEL.HalfEdge.link_edges(helper, edge)
+                pr.color = rp.color = (0, 0.5, 1)
                 print("Newly-generated edges are", str(pr), str(rp))
-                # Generate two new entries in the data structure, one to the right, one to the left of the stalagmite point
-                # Set the helper for both sides to the split point
-                pass
             # If a stalactite is met, merge two trapezoids into one
             elif is_stalactite(edge):
                 # Pop the trapezoid at hand from the data structure
@@ -209,94 +190,107 @@ def generate_monotone_sections(outer_face):
     # Monotonize one way
     monotonize_forward(inner_face)
     # Monotonize each sub-face the other way
-    outer_face.reflect()
-    inner_faces = outer_face.list_contained_faces_from_outer_face()
+    dcel.reflect()
+    inner_faces = dcel.list_contained_faces()
     for face in inner_faces:
         print(len(face.border))
         monotonize_forward(face)
-    outer_face.reflect()
+    dcel.reflect()
     # Reallocate face references
-    outer_face.reallocate_faces_from_outer_face()
-    # Return a reference to a outside face.
-    return draw_points_by_type
+    dcel.reallocate_faces()
 
 
-def monotone_x_triangulate(polygon_points, axis):
+def monotone_x_triangulate(dcel):
     """
     Given the in-order points of a polygon monotone with respect to x,
     return a list of edges required to triangulate it.
     """
-    # Convert y-monotone sections into x-monotone sections, then reflect them over afterwards
-    if axis == 'x':
-        pass
-    elif axis == 'y':
-        pass
-    else:
-        raise Exception("Your axis is neither x nor y.")
-    # Get a pointers to the start and end of this polygon, as well as pointers that we will use to track traversal
-    min_index = polygon_points.index(min(polygon_points))
-    max_index = polygon_points.index(max(polygon_points))
-    # Get pointers for the top and bot sides.
-    top_index = min_index + 1
-    bot_index = min_index - 1
-    # Generate linked list to act as a stack for unresolved points.
-    q = deque()
+    for face in dcel.list_contained_faces():
+        print('\n\n\n\n')
+        print('Border of current face:', list(map(lambda e: str(e.origin), face.border)))
+        # Get a pointers to the start and end of this polygon, as well as pointers that we will use to track traversal
+        rooted_edge = face.inc
+        while not is_source(rooted_edge):
+            rooted_edge = rooted_edge.succ
+        # Generate linked list to act as a stack for unresolved points.
+        q = deque([rooted_edge.pred, rooted_edge, rooted_edge.succ])
 
-    # Define two triangulating functions
-    def resolve_left():
-        if len(q) >= 3 and is_ccw_turn(q[-1], q[-2], q[-3]):
-            while len(q) >= 3 and is_ccw_turn(q[-1], q[-2], q[-3]):
-                # Remove the second-to-last point from the equation by forming a triangle with it as a point on the hull
-                a = q.popleft()
-                b = q.popleft()
-                c = q.popleft()
-                q.appendleft(c)
-                q.appendleft(a)
+        # Define two triangulating functions
+        def resolve_left():
+            if len(q) >= 3 and is_ccw_turn(q[-1].origin.coord, q[-2].origin.coord, q[-3].origin.coord):
+                print("Resolving left")
+                while len(q) >= 3 and is_ccw_turn(q[-1].origin.coord, q[-2].origin.coord, q[-3].origin.coord):
+                    # Remove the second-to-last point from the equation by forming a triangle with it as a point on the hull
+                    a = q.pop()
+                    q.pop()
+                    c = q.pop()
+                    print("Adding edge from", str(a.origin), "to", str(c.origin))
+                    pr, rp = DCEL.HalfEdge.link_edges(a, c)
+                    pr.color = rp.color = (1, 0.5, 1)
+                    q.append(a)
+                    q.append(rp)
+                resolve_right()
+
+        def resolve_right():
+            if len(q) >= 3 and is_ccw_turn(q[2].origin.coord, q[1].origin.coord, q[0].origin.coord):
+                print('Resolving right')
+                while len(q) >= 3 and is_ccw_turn(q[2].origin.coord, q[1].origin.coord, q[0].origin.coord):
+                    # Remove the second-to-last point from the equation by forming a triangle with it as a point on the hull
+                    a = q.popleft()
+                    q.popleft()
+                    c = q.popleft()
+                    print("Adding edge from", str(a.origin), "to", str(c.origin))
+                    pr, rp = DCEL.HalfEdge.link_edges(a, c)
+                    pr.color = rp.color = (1, 0.5, 0.5)
+                    q.append(pr)
+                    q.append(c)
+                resolve_left()
+
+        # While not at the end of both chains...
+        i = 0
+        done = False
+        while not done and (q[0].pred.origin.x > q[0].origin.x or q[-1].succ.origin.x > q[-1].origin.x):
+            current_edges = dcel.generate_full_edge_list(including_outside=True)
+            current_edge_ends = {(str(e.p0), str(e.p1)) for e in current_edges}
+            for p0, p1 in current_edge_ends:
+                if (p1, p0) not in current_edge_ends:
+                    raise Exception('You have failed to match your edges.\n' + '\n'.join([str(item) for item in sorted(current_edge_ends)]))
+            print(i, [str(e) for e in q])
+            i += 1
+            # Resolve both sides to move the pointers up the queue
             resolve_right()
-
-    def resolve_right():
-        if len(q) >= 3 and is_ccw_turn(q[0], q[1], q[2]):
-            while len(q) >= 3 and is_ccw_turn(q[0], q[1], q[2]):
-                # Remove the second-to-last point from the equation by forming a triangle with it as a point on the hull
-                a = q.pop()
-                b = q.pop()
-                c = q.pop()
-                q.append(c)
-                q.append(a)
             resolve_left()
-            
-    # While not at the end of both chains...
-    while top_index != max_index or bot_index != max_index:
-        # Resolve the left side, which will naturally call the other side
-        resolve_left()
-        if polygon_points[top_index] <= polygon_points[bot_index]:
-            q.appendleft(polygon_points[top_index])
-            top_index += 1
-        elif polygon_points[top_index] > polygon_points[bot_index]:
-            q.appendleft(polygon_points[bot_index])
-            bot_index += 1
-    # Convert y-monotone sections into x-monotone sections, then reflect them over afterwards
-    if axis == 'x':
-        pass
-    elif axis == 'y':
-        pass
-    else:
-        raise Exception("Your axis is neither x nor y.")
+            if not is_sink(q[0].pred) and q[0].pred.origin.x < q[-1].succ.origin.x:
+                print('LQueueing', str(q[0].pred))
+                q.appendleft(q[0].pred)
+            elif not is_sink(q[-1].succ) and q[0].pred.origin.x > q[-1].succ.origin.x:
+                print("RQueueing", str(q[-1].succ))
+                q.append(q[-1].succ)
+            else:
+                done = True
+        print(i, list(map(str, q)))
+    # Reallocate faces to the new triangulation
+    dcel.reallocate_faces()
+    edges = dcel.generate_full_edge_list()
+    for edge in edges:
+        print(str(edge))
     # Return your final answer
     return []
 
 
-def triangulate(polygon_points):
+def triangulate(dcel):
     """
     This function takes in a list of points, assumed to be the in-order points of a certain unholed polygon.
     This polygon input may not be convex, nor even necessarily monotone.
     The function partitions the inputs into monotone sections, then triangulates those now monotone sections.
     The final result is a list of segments that will successfully triangulate the input polygon.
     """
-    monotone_sections, segments = generate_monotone_sections(polygon_points)
-    for monotone_section in monotone_sections:
-        segments.extend()
-    return []
+    generate_monotone_sections(dcel)
+    monotone_x_triangulate(dcel)
+
+
+def find_path_length(polygon_points, start, end):
+    pass
 
 
 def recursive_hull_triangulator(polygon_points):
@@ -334,21 +328,13 @@ def recursive_hull_triangulator(polygon_points):
     return []
 
 
-def dcel_to_simple_edge_list():
-    """
-    A function that converts a more complicated DCEL to a simple collection of edges.
-    This allows the edges to be checked for correct triangulation.
-    """
-    pass
-
-
 if __name__ == "__main__":
     test = "generated_example"
     if test == "generated_example":
         start = (91, 104)
         end = (119, 119)
         points = [
-            (50, 35),
+            (50, 39),
             (60, 45),
             (34, 49),
             (6, 35),
@@ -358,12 +344,12 @@ if __name__ == "__main__":
             (4, 15),
             (2, 10),
             (10, 8),
-            (22, 22),
+            (22, 24),
             (22, 19),
             (30, 20),
             (31, 28),
             (37, 10),
-            (39, 29),
+            (39, 20),
             (58, 33),
         ]
         points = [(y, 50 - x) for y, x in points]
@@ -436,24 +422,29 @@ if __name__ == "__main__":
             (0, 2),
             (4, 2),
         ]
+    else:
+        raise Exception("Improper test case!")
+    # Generate a blank polygon, correctly oriented
+    dcel = DCEL(points)
+    # Triangulate said polygon
+    triangulate(dcel)
+    # Get an edge list from the polygon
+    edge_list = dcel.generate_full_edge_list(including_outside=False)
+    # Adjust the DCEL parameters to correctly display the chosen item
     DCEL.line_side_offset = 5
     DCEL.end_shortening = 20
     DCEL.wh_pixels = 800
     DCEL.adj = 20
-    max_dir = max([y for y, x in points] + [x for x, y in points])
-    DCEL.wh_n = max_dir
+    DCEL.wh_n = max([y for y, x in points] + [x for x, y in points])
     DCEL.readjust()
-    outer_face = DCEL.generate_dcel_from_coordinates_list(points)
-    draw_points_by_type = generate_monotone_sections(outer_face)
-    new_edge_list = outer_face.generate_full_edge_list_from_outer_face()
-    inner_face = outer_face.inc.twin.face
-    def draw_border():
-        set_stroke_color(0, 0, 0)
-        for line in new_edge_list:
-            line.draw()
-        for line in new_edge_list:
-            line.origin.draw()
+    # Label faces as convex or not
+    for face in dcel.list_contained_faces():
+        face.color = (0, 0, 1) if face.is_convex else (1, 0, 0)
+        print(face.color, face.points, id(face))
+    print()
+    for face in dcel.list_contained_faces():
+        print(face.color, face.points, id(face))
+    # Draw the completed result
     def draw():
-        draw_border()
-        draw_points_by_type()
+        dcel.draw()
     start_graphics(draw, width=DCEL.wh_pixels, height=DCEL.wh_pixels)

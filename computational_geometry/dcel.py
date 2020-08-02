@@ -33,6 +33,37 @@ class DCEL:
     end_shortening = 10
     scalar = (wh_pixels - adj * 2) / wh_n
 
+    def __init__(self, points):
+        # Ensure that the points are in CCW order
+        min_point = min(points)
+        i = points.index(min_point)
+        a, b, c = points[(i - 1) % len(points)], points[i], points[(i + 1) % len(points)]
+        (ay, ax), (by, bx), (cy, cx) = a, b, c
+        det = (by * ax + ay * cx + cy * bx) - (ay * bx + by * cx + cy * ax)
+        print("Points det at {}, {}, {} juncture is {}.".format(a, b, c, det))
+        if det > 0:
+            points = points[::-1]
+        print("Making a CCW DCEL from points", points)
+        # Generate a DCEL with two faces, one in, one out
+        in_face = DCEL.Face()
+        out_face = DCEL.Face()
+        vertices = [DCEL.Vertex(point) for point in points]
+        lines = [DCEL.generate_half_edge_pair(vertices[i], vertices[(i + 1) % len(vertices)])
+                 for i in range(len(vertices))]
+        for i in range(len(lines)):
+            phi_prev, rho_next = lines[(i - 1) % len(lines)]
+            phi_curr, rho_curr = lines[i]
+            phi_next, rho_prev = lines[(i + 1) % len(lines)]
+            phi_curr.face = in_face
+            rho_curr.face = out_face
+            phi_curr.succ = phi_next
+            phi_curr.pred = phi_prev
+            rho_curr.succ = rho_next
+            rho_curr.pred = rho_prev
+        in_face.inc = lines[0][0]
+        out_face.inc = lines[0][1]
+        self.out_face = out_face
+
     @classmethod
     def readjust(cls):
         DCEL.scalar = (DCEL.wh_pixels - DCEL.adj * 2) / DCEL.wh_n
@@ -57,6 +88,8 @@ class DCEL:
             self.pred = None
             # The line succeeding this one along the border of its left face
             self.succ = None
+            # The color of the line that is drawn when needed
+            self.color = (0, 0, 0)
 
         @property
         def p0(self):
@@ -113,24 +146,47 @@ class DCEL:
             scaled_p1_x = DCEL.scale_loc(self.p1.x) + x_adj - x_short
             scaled_p1_y = DCEL.scale_loc(self.p1.y) + y_adj - y_short
 
-            set_stroke_color(0, 0, 0)
-            draw_line(scaled_p0_x, scaled_p0_y, scaled_p1_x, scaled_p1_y)
-
             head_angle = self.theta + DCEL.arrow_head_angle
             head_end_x = scaled_p1_x - DCEL.arrow_head_len * math.cos(head_angle)
             head_end_y = scaled_p1_y - DCEL.arrow_head_len * math.sin(head_angle)
 
-            set_stroke_color(0, 0, 0)
+            r, g, b = self.color
+            set_stroke_color(r, g, b)
+            draw_line(scaled_p0_x, scaled_p0_y, scaled_p1_x, scaled_p1_y)
             draw_line(scaled_p1_x, scaled_p1_y, head_end_x, head_end_y)
+            set_stroke_color(0, 0, 0)
+
+        @classmethod
+        def link_edges(cls, a, b):
+            # Generate two new half-edges in the graph so as to enclose the newly-generated subspace
+            pr, rp = DCEL.generate_half_edge_pair(a.origin, b.origin)
+            # Insert on the helper
+            a.pred.succ = pr
+            pr.pred = a.pred
+            a.pred = rp
+            rp.succ = a
+            # Insert on the new edge
+            b.pred.succ = rp
+            rp.pred = b.pred
+            b.pred = pr
+            pr.succ = b
+            # Return the new edges for further manipulation
+            return pr, rp
 
     class Vertex:
         def __init__(self, point):
             self.y, self.x = point
             # The first outgoing incident half-edge
             self.inc = None
+            # Allow color to be set on the fly
+            self.color = (0, 0, 0)
 
         def __str__(self):
             return "({},{})".format(round(self.y, 2), round(self.x, 2))
+
+        @property
+        def coord(self):
+            return self.x, self.y
 
         # Taking in 3 points, output the area within them
         @staticmethod
@@ -138,6 +194,8 @@ class DCEL:
             return abs((p1.x * (p2.y - p3.y) + p2.x * (p3.y - p1.y) + p3.x * (p1.y - p2.y))) / 2
 
         def draw(self):
+            r, g, b = self.color
+            set_stroke_color(r, g, b)
             draw_circle(DCEL.scale_loc(self.x), DCEL.scale_loc(self.y), 3)
             set_font_size(15)
             draw_text(str(self), DCEL.scale_loc(self.x), DCEL.scale_loc(self.y))
@@ -148,6 +206,16 @@ class DCEL:
             self.inc = None
             # A load that can be used for any number of things
             self.load = None
+            # Track whether this face is or is not convex
+            self.is_convex = False
+            # Track color for the sake of the drawing functions
+            self.color = (0, 0, 0)
+
+        def update_convexity(self):
+            self.is_convex = True
+            for edge in self.border:
+                if edge.theta > math.pi:
+                    self.is_convex = False
 
         @property
         def border(self):
@@ -158,72 +226,92 @@ class DCEL:
                 curr = curr.succ
             return border
 
-        def generate_full_edge_list_from_outer_face(self, including_outside=False):
-            q = [edge.twin for edge in self.border]
-            if including_outside:
-                seen = set()
-            else:
-                seen = {id(edge) for edge in self.border}
-            edge_list = []
-            while q:
-                edge = q.pop()
-                if id(edge) not in seen:
-                    edges_in_face = [edge]
-                    curr = edge.succ
-                    while curr != edge:
-                        edges_in_face.append(curr)
-                        curr = curr.succ
-                    new_face = DCEL.Face()
-                    new_face.inc = edge
-                    for facial_edge in edges_in_face:
-                        facial_edge.face = new_face
-                        q.append(facial_edge)
-                        seen.add(id(facial_edge))
-                        edge_list.append(facial_edge)
-            return edge_list
+        @property
+        def points(self):
+            return [e.origin.coord for e in self.border]
 
-        def reallocate_faces_from_outer_face(self):
-            q = [edge.twin for edge in self.border]
-            seen = {id(edge) for edge in self.border}
-            while q:
-                edge = q.pop()
-                if id(edge) not in seen:
-                    edges_in_face = [edge]
-                    curr = edge.succ
-                    while curr != edge:
-                        edges_in_face.append(curr)
-                        curr = curr.succ
-                    new_face = DCEL.Face()
-                    new_face.inc = edge
-                    for facial_edge in edges_in_face:
-                        facial_edge.face = new_face
-                        q.append(facial_edge)
-                    seen.add(id(edge))
+        @property
+        def centroid(self):
+            border = self.border
+            return DCEL.Vertex((sum([e.origin.y for e in border]) / len(border),
+                                sum([e.origin.x for e in border]) / len(border)))
 
-        def list_contained_faces_from_outer_face(self):
-            edges = self.generate_full_edge_list_from_outer_face()
-            faces = []
+        def draw(self):
+            r, g, b = self.color
+            set_fill_color(r, g, b)
+            set_stroke_color(r, g, b)
+            draw_polygon([[DCEL.scale_loc(n) for n in p] for p in self.points])
+            set_fill_color(0, 0, 0)
+            set_stroke_color(0, 0, 0)
+
+    def generate_full_edge_list(self, including_outside=False):
+        q = [edge.twin for edge in self.out_face.border]
+        if including_outside:
             seen = set()
-            for edge in edges:
-                if id(edge.face) not in seen:
-                    seen.add(id(edge.face))
-                    faces.append(edge.face)
-            return faces
+        else:
+            seen = {id(edge) for edge in self.out_face.border}
+        edge_list = []
+        while q:
+            edge = q.pop()
+            if id(edge) not in seen:
+                edges_in_face = [edge]
+                curr = edge.succ
+                while curr != edge:
+                    edges_in_face.append(curr)
+                    curr = curr.succ
+                new_face = DCEL.Face()
+                new_face.inc = edge
+                for facial_edge in edges_in_face:
+                    facial_edge.face = new_face
+                    q.append(facial_edge)
+                    q.append(facial_edge.twin)
+                    seen.add(id(facial_edge))
+                    edge_list.append(facial_edge)
+        return edge_list
 
-        def reflect(self):
-            print("Reflected polygon.")
-            edge_list = self.generate_full_edge_list_from_outer_face(including_outside=True)
-            edge_list = sorted(edge_list, key=lambda e: (e.origin.y, e.origin.x))
-            vertices_list = [edge.origin for edge in edge_list]
-            seen = set()
-            vertices_set = []
-            for vertex in vertices_list:
-                if id(vertex) not in seen:
-                    seen.add(id(vertex))
-                    vertices_set.append(vertex)
-            for vertex in vertices_set:
-                vertex.x *= -1
-                vertex.y *= -1
+    def reflect(self):
+        print("Reflected polygon.")
+        edge_list = self.generate_full_edge_list(including_outside=True)
+        edge_list = sorted(edge_list, key=lambda e: (e.origin.y, e.origin.x))
+        vertices_list = [edge.origin for edge in edge_list]
+        seen = set()
+        vertices_set = []
+        for vertex in vertices_list:
+            if id(vertex) not in seen:
+                seen.add(id(vertex))
+                vertices_set.append(vertex)
+        for vertex in vertices_set:
+            vertex.x *= -1
+            vertex.y *= -1
+
+    def list_contained_faces(self):
+        edges = self.generate_full_edge_list()
+        faces = []
+        seen = set()
+        for edge in edges:
+            if id(edge.face) not in seen:
+                seen.add(id(edge.face))
+                faces.append(edge.face)
+        return faces
+
+    def reallocate_faces(self):
+        q = [edge.twin for edge in self.out_face.border]
+        seen = {id(edge) for edge in self.out_face.border}
+        while q:
+            edge = q.pop()
+            if id(edge) not in seen:
+                edges_in_face = [edge]
+                curr = edge.succ
+                while curr != edge:
+                    edges_in_face.append(curr)
+                    curr = curr.succ
+                new_face = DCEL.Face()
+                new_face.inc = edge
+                for facial_edge in edges_in_face:
+                    facial_edge.face = new_face
+                    q.append(facial_edge)
+                new_face.update_convexity()
+                seen.add(id(edge))
 
     @classmethod
     def generate_half_edge_pair(cls, phi, rho):
@@ -244,38 +332,13 @@ class DCEL:
         rho.inc = rp
         return pr, rp
 
-    @classmethod
-    def generate_dcel_from_coordinates_list(cls, points):
-        # Ensure that the points are in CCW order
-        min_point = min(points)
-        i = points.index(min_point)
-        a, b, c = points[(i - 1) % len(points)], points[i], points[(i + 1) % len(points)]
-        (ay, ax), (by, bx), (cy, cx) = a, b, c
-        det = (by * ax + ay * cx + cy * bx) - (ay * bx + by * cx + cy * ax)
-        print("Points det at {}, {}, {} juncture is {}.".format(a, b, c, det))
-        if det > 0:
-            points = points[::-1]
-        print("Making a CCW DCEL from points", points)
-        # Generate a DCEL with two faces, one in, one out
-        in_face = DCEL.Face()
-        out_face = DCEL.Face()
-        vertices = [DCEL.Vertex(point) for point in points]
-        lines = [DCEL.generate_half_edge_pair(vertices[i], vertices[(i + 1) % len(vertices)])
-                 for i in range(len(vertices))]
-        for i in range(len(lines)):
-            phi_prev, rho_next = lines[(i - 1) % len(lines)]
-            phi_curr, rho_curr = lines[i]
-            phi_next, rho_prev = lines[(i + 1) % len(lines)]
-            phi_curr.face = in_face
-            rho_curr.face = out_face
-            phi_curr.succ = phi_next
-            phi_curr.pred = phi_prev
-            rho_curr.succ = rho_next
-            rho_curr.pred = rho_prev
-        in_face.inc = lines[0][0]
-        out_face.inc = lines[0][1]
-        # Return a reference to the inner face
-        return out_face
+    def draw(self):
+        for face in self.list_contained_faces():
+            face.draw()
+        for line in self.generate_full_edge_list(False):
+            line.draw()
+        for line in self.generate_full_edge_list(False):
+            line.origin.draw()
 
 
 framework = "finding_monotone_parts"

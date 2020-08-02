@@ -1,5 +1,5 @@
 import numpy, ctypes
-from computational_geometry.dcel import DCEL
+from computational_geometry.dcel import DCEL, obj
 from computational_geometry.s1_convex_hull.hull_methods_2d import is_ccw_turn
 
 
@@ -27,36 +27,23 @@ def delauney_randomized_incremental_constructor(points):
     There are nlogn rebucketings, each corresponding to a O(1) edge flip.
     """
     # Remove doubles.
-    points = list(set(points))
+    points = [DCEL.Vertex(p) for p in set(points)]
     # If there are fewer than 3 points, something is off. Write a custom edge-case algo for it.
     if len(points) < 3:
         return None
     # Get bounds for the enclosing set of points.
-    min_x, max_x = min(points, key=lambda p: p[0]),  max(points, key=lambda p: p[0])
-    min_y, max_y = min(points, key=lambda p: p[1]),  max(points, key=lambda p: p[1])
+    min_x, max_x = min(points, key=lambda p: p.x).x,  max(points, key=lambda p: p.x).x
+    min_y, max_y = min(points, key=lambda p: p.y).y,  max(points, key=lambda p: p.y).y
     # Generate an enclosing triangle to hold the Delauney triangulation.
-    a, b, c = [DCEL.Vertex(point) for point in [(min_x-5, min_y-5), (min_x-5, min_x+(max_y-min_y)*2+20), (min_x+(max_x-min_x)*2+20, min_y-5)]]
-    initial_face = DCEL.Face()
-    for i in range(3):
-        phi = [a, b, c][(i+0) % 3]
-        rho = [a, b, c][(i+1) % 3]
-        pr, rp = DCEL.generate_half_edge_pair(phi, rho)
-        phi.inc = pr
-        phi.load = initial_face
-    for i in range(3):
-        phi = [a, b, c][(i+0) % 3]
-        rho = [a, b, c][(i+1) % 3]
-        phi.inc.succ = rho.inc
-        rho.inc.prev = phi.inc
-        phi.inc.twin.prev = rho.inc.twin
-        rho.inc.twin.next = phi.inc.twin
-    initial_face.inc = a.inc
+    outer_face = DCEL.generate_dcel_from_coordinates_list(
+        [(min_x-5, min_y-5), (min_x-5, min_x+(max_y-min_y)*2+20), (min_x+(max_x-min_x)*2+20, min_y-5)])
+    initial_face = outer_face.inc.twin.face
     initial_face.load = points
     # Load up a queue with references to unresolved faces.
     q = {id(initial_face)}
     while q:
         # Grab a face from the queue
-        face = ctypes.cast(q.pop(), ctypes.py_object).value
+        face = obj(q.pop())
         points = face.load
         # If the load is 0, we're done.
         if len(points) == 0:
