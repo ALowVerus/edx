@@ -5,12 +5,12 @@ from computational_geometry.b_tree_generic import RedBlackTree
 from cs1lib import *
 
 
-is_source = lambda e: e.dx > 0 and e.pred.dx < 0 and e.is_ccw_turn
-is_sink = lambda e: e.dx < 0 and e.pred.dx > 0 and e.is_ccw_turn
+is_source = lambda e: e.dx >= 0 and e.pred.dx < 0 and e.is_ccw_turn
+is_sink = lambda e: e.dx < 0 and e.pred.dx >= 0 and e.is_ccw_turn
 is_l_progress = lambda e: e.dx < 0 and e.pred.dx < 0
-is_r_progress = lambda e: e.dx > 0 and e.pred.dx > 0
-is_stalagmite = lambda e: e.dx > 0 and e.pred.dx < 0 and not e.is_ccw_turn
-is_stalactite = lambda e: e.dx < 0 and e.pred.dx > 0 and not e.is_ccw_turn
+is_r_progress = lambda e: e.dx >= 0 and e.pred.dx >= 0
+is_stalagmite = lambda e: e.dx >= 0 and e.pred.dx < 0 and not e.is_ccw_turn
+is_stalactite = lambda e: e.dx < 0 and e.pred.dx >= 0 and not e.is_ccw_turn
 
 
 def generate_monotone_sections(dcel):
@@ -47,18 +47,24 @@ def generate_monotone_sections(dcel):
         if sum([id(edge) in l for l in [sources_ids, sinks_ids,
                                         l_progress_ids, r_progress_ids,
                                         stalactites_ids, stalagmites_ids]]) != 1:
-            raise Exception("{} qualified multiple times.".format(str(edge)))
+            raise Exception("{} did not qualify a single time.".format(str(edge)))
 
+    # Green
     for edge in sources:
         edge.origin.color = (0, 1, 0)
+    # Teal
     for edge in sinks:
         edge.origin.color = (0, 1, 1)
+    # Purple
     for edge in l_progress:
         edge.origin.color = (1, 0, 1)
+    # Dusty yellow
     for edge in r_progress:
         edge.origin.color = (0.8, 0.8, 0)
+    # Red
     for edge in stalagmites:
         edge.origin.color = (1, 0, 0)
+    # Blue
     for edge in stalactites:
         edge.origin.color = (0, 0, 1)
 
@@ -193,7 +199,6 @@ def generate_monotone_sections(dcel):
     dcel.reflect()
     inner_faces = dcel.list_contained_faces()
     for face in inner_faces:
-        print(len(face.border))
         monotonize_forward(face)
     dcel.reflect()
     # Reallocate face references
@@ -205,15 +210,15 @@ def monotone_x_triangulate(dcel):
     Given the in-order points of a polygon monotone with respect to x,
     return a list of edges required to triangulate it.
     """
+    print('\n\n\n\n')
     for face in dcel.list_contained_faces():
-        print('\n\n\n\n')
         print('Border of current face:', list(map(lambda e: str(e.origin), face.border)))
         # Get a pointers to the start and end of this polygon, as well as pointers that we will use to track traversal
         rooted_edge = face.inc
         while not is_source(rooted_edge):
             rooted_edge = rooted_edge.succ
         # Generate linked list to act as a stack for unresolved points.
-        q = deque([rooted_edge.pred, rooted_edge, rooted_edge.succ])
+        q = deque([rooted_edge])
 
         # Define two triangulating functions
         def resolve_left():
@@ -229,6 +234,7 @@ def monotone_x_triangulate(dcel):
                     pr.color = rp.color = (1, 0.5, 1)
                     q.append(a)
                     q.append(rp)
+                    print('\tQ is now', [str(e) for e in q])
                 resolve_right()
 
         def resolve_right():
@@ -242,14 +248,14 @@ def monotone_x_triangulate(dcel):
                     print("Adding edge from", str(a.origin), "to", str(c.origin))
                     pr, rp = DCEL.HalfEdge.link_edges(a, c)
                     pr.color = rp.color = (1, 0.5, 0.5)
-                    q.append(pr)
-                    q.append(c)
+                    q.appendleft(pr)
                 resolve_left()
 
         # While not at the end of both chains...
         i = 0
         done = False
-        while not done and (q[0].pred.origin.x > q[0].origin.x or q[-1].succ.origin.x > q[-1].origin.x):
+        max_hit_count = len(face.border) + 5
+        while i < max_hit_count and not done and (q[0].pred.origin.x > q[0].origin.x or q[-1].succ.origin.x > q[-1].origin.x):
             current_edges = dcel.generate_full_edge_list(including_outside=True)
             current_edge_ends = {(str(e.p0), str(e.p1)) for e in current_edges}
             for p0, p1 in current_edge_ends:
@@ -260,15 +266,21 @@ def monotone_x_triangulate(dcel):
             # Resolve both sides to move the pointers up the queue
             resolve_right()
             resolve_left()
-            if not is_sink(q[0].pred) and q[0].pred.origin.x < q[-1].succ.origin.x:
+            # print(is_sink(q[0].pred), is_sink(q[-1].succ), q[0].pred.origin.x, q[-1].succ.origin.x)
+            if not is_sink(q[0].pred) and q[0].pred.origin.x <= q[-1].succ.origin.x:
                 print('LQueueing', str(q[0].pred))
                 q.appendleft(q[0].pred)
             elif not is_sink(q[-1].succ) and q[0].pred.origin.x > q[-1].succ.origin.x:
                 print("RQueueing", str(q[-1].succ))
                 q.append(q[-1].succ)
             else:
+                print("Done is done!")
                 done = True
         print(i, list(map(str, q)))
+        print("Triangulated!")
+        print('\n\n\n\n')
+        if i == max_hit_count:
+            raise Exception("Something has gone wrong with resolving this face.")
     # Reallocate faces to the new triangulation
     dcel.reallocate_faces()
     edges = dcel.generate_full_edge_list()
@@ -286,11 +298,11 @@ def triangulate(dcel):
     The final result is a list of segments that will successfully triangulate the input polygon.
     """
     generate_monotone_sections(dcel)
+    for face in dcel.list_contained_faces():
+        print("BLARG: F:", [str(e) for e in face.border])
+    for e in dcel.generate_full_edge_list(False):
+        print("{:21}, {:21}, {:21}".format(str(e.pred), str(e), str(e.succ)))
     monotone_x_triangulate(dcel)
-
-
-def find_path_length(polygon_points, start, end):
-    pass
 
 
 def recursive_hull_triangulator(polygon_points):
@@ -329,8 +341,61 @@ def recursive_hull_triangulator(polygon_points):
 
 
 if __name__ == "__main__":
-    test = "generated_example"
-    if test == "generated_example":
+    test = "basic_triangle_3"
+    if test == "bottom_spans_under_initial_indent_test_case":
+        start = (91, 104)
+        end = (119, 119)
+        points = [
+            (34, 49),
+            (6, 35),
+            (4, 30),
+            (6, 25),
+            (10, 8),
+            (22, 19),
+            (30, 20),
+            (31, 28),
+            (37, 10),
+            (39, 20),
+        ]
+        points = [(y, 50 - x) for y, x in points]
+        print(points)
+    elif test == "facial_debugger":
+        start = (91, 104)
+        end = (119, 119)
+        points = [
+            (25, 20),
+            (31, 28),
+            (37, 10),
+            (39, 20),
+            (58, 33),
+            (34, 49),
+            (6, 42),
+            (4, 32),
+            (6, 25),
+            (10, 8),
+            (22, 19),
+        ]
+        points = [(y, 50 - x) for y, x in points]
+        print(points)
+    elif test == "oscillator":
+        start = (91, 104)
+        end = (119, 119)
+        points = [
+            (25, 25),
+            (31, 28),
+            (37, 10),
+            (39, 20),
+            (58, 33),
+            (34, 49),
+            (6, 42),
+            (4, 32),
+            (5, 25),
+            (10, 8),
+            (22, 19),
+        ]
+        points = [(y, 50 - x) for y, x in points]
+        print(points)
+    elif test == "generated_example":
         start = (91, 104)
         end = (119, 119)
         points = [
@@ -367,6 +432,19 @@ if __name__ == "__main__":
         ]
         print(points)
     elif test == "stalagmite_stalactite_test_case":
+        start = (91, 104)
+        end = (119, 119)
+        points = [
+            (34, 49),
+            (6, 38),
+            (20, 20),
+            (25, 30),
+            (30, 20),
+            (31, 28),
+            (37, 10),
+            (39, 29),
+        ]
+    elif test == "stalagmite_stalactite_test_case_2":
         start = (91, 104)
         end = (119, 119)
         points = [
@@ -435,15 +513,25 @@ if __name__ == "__main__":
     DCEL.end_shortening = 20
     DCEL.wh_pixels = 800
     DCEL.adj = 20
-    DCEL.wh_n = max([y for y, x in points] + [x for x, y in points])
+    DCEL.wh_n = max([y for y, x in points] + [x for y, x in points]) * 1.1
+    print("WHN IS ", DCEL.wh_n)
     DCEL.readjust()
     # Label faces as convex or not
-    for face in dcel.list_contained_faces():
-        face.color = (0, 0, 1) if face.is_convex else (1, 0, 0)
-        print(face.color, face.points, id(face))
-    print()
-    for face in dcel.list_contained_faces():
-        print(face.color, face.points, id(face))
+    ids1 = set(map(id, dcel.list_contained_faces()))
+    ids2 = set(map(id, dcel.list_contained_faces()))
+    dif12 = sorted(list(ids1.difference(ids2)))
+    print("{} items:\n\t".format(len(dif12)), '\n\t '.join([str(n) for n in dif12]))
+    dif21 = sorted(list(ids2.difference(ids1)))
+    print("{} items:\n\t".format(len(dif21)), '\n\t '.join([str(n) for n in dif21]))
+    same12 = sorted([n for n in ids1 | ids2 if n not in dif12 and n not in dif21])
+    print("{} items:\n\t".format(len(same12)), '\n\t '.join(sorted([str(obj(n)) for n in same12])))
+    print("HELLO")
+    # print(len(faces))
+    # for face in faces:
+    #     face.color = (1, 0, 1)
+    #     print(face.color)
+    # for face in faces:
+    #     print(face.color)
     # Draw the completed result
     def draw():
         dcel.draw()

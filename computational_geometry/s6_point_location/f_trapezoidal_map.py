@@ -5,15 +5,17 @@ Query time: logn (expected)
 """
 
 import itertools
-from drawing_lib import *
+from computational_geometry.dcel import DCEL
+from cs1lib import *
 
 chain = lambda l: list(itertools.chain.from_iterable(l))
 
 
 # Define a TrapezoidalMap class to manage point searches
-class TrapezoidalMap:
+class TrapezoidalMap(DCEL):
     def __init__(self):
-        self.search_tree = self.FaceNode(self, None)
+        super().__init__()
+        self.search_tree = self.Face(self, None)
         self.faces = {}
         self.lines = {}
         self.points = {}
@@ -21,9 +23,9 @@ class TrapezoidalMap:
         self.color_index = 0
         self.line_segments_at_hand = []
 
-    class PointNode(Point):
+    class Vertex(DCEL.Vertex):
         def __init__(self, root_map, parent, point, face):
-            super().__init__(point.y, point.x)
+            super().__init__((point.y, point.x))
             self.root_map = root_map
             self.parent = parent
             self.left = self.root_map.FaceNode(self.root_map, self)
@@ -53,11 +55,10 @@ class TrapezoidalMap:
             self.left.draw(part)
             if part == 'points':
                 set_fill_color(0, 0, 0)
-                draw_circle(scale_loc(self.x), scale_loc(self.y), 5)
+                draw_circle(DCEL.scale_loc(self.x), DCEL.scale_loc(self.y), 5)
 
-    class LineNode(Line):
+    class HalfEdge(DCEL.HalfEdge):
         def __init__(self, root_map, parent, source_line, face):
-            super().__init__(source_line.p0, source_line.p1)
             self.root_map = root_map
             self.parent = parent
             self.top = self.root_map.FaceNode(self.root_map, self)
@@ -91,7 +92,7 @@ class TrapezoidalMap:
             self.top.draw(part)
             self.bot.draw(part)
 
-    class FaceNode:
+    class Face(DCEL.Face):
         def __init__(self, root_map, parent):
             self.root_map = root_map
             self.parents = [parent]
@@ -183,10 +184,10 @@ class TrapezoidalMap:
                         vertices[i][1] = 0
                 for i in [1, 2]:
                     if vertices[i][0] is None:
-                        vertices[i][0] = wh_n
+                        vertices[i][0] = DCEL.wh_n
                 for i in [2, 3]:
                     if vertices[i][1] is None:
-                        vertices[i][1] = wh_n
+                        vertices[i][1] = DCEL.wh_n
                 # Print vertices for reference.
                 if self.root_map.printed_vertices_flag is True:
                     print(vertices)
@@ -194,11 +195,9 @@ class TrapezoidalMap:
                 if self.is_clicked:
                     set_fill_color(0, 0, 0)
                 else:
-                    r, g, b = COLORS[self.root_map.color_index]
+                    r, g, b = self.color
                     set_fill_color(r, g, b)
-                self.root_map.color_index += 1
-                self.root_map.color_index %= len(COLORS)
-                draw_polygon([[scale_loc(n) for n in v][::-1] for v in vertices])
+                draw_polygon([[DCEL.scale_loc(n) for n in v][::-1] for v in vertices])
 
     def add_point(self, point):
         # If point is not in the map yet, add process it.
@@ -206,8 +205,8 @@ class TrapezoidalMap:
             # Add the point to map's points
             self.points[str(point)] = []
             # If we are initializing the tree, set the first point as the root node
-            if type(self.search_tree) is self.FaceNode:
-                self.search_tree = self.PointNode(self, None, point, self.search_tree)
+            if type(self.search_tree) is self.Face:
+                self.search_tree = self.Vertex(self, None, point, self.search_tree)
             # If stuff exists in the tree, propagate.
             else:
                 self.search_tree.propagate_new_point(point)
@@ -217,7 +216,7 @@ class TrapezoidalMap:
             for point in source_line.points:
                 self.add_point(point)
             # Propagate! You can evade checks because points must necessarily already be in the tree
-            if type(self.search_tree) == self.FaceNode:
+            if type(self.search_tree) == self.Face:
                 raise Exception("You've attempted to propagate down a FaceNode. Something has gone wrong.")
             else:
                 print('Now adding line {}.'.format(str(source_line)))
@@ -236,7 +235,7 @@ class TrapezoidalMap:
                     last_segment = self.line_segments_at_hand[0]
                     for curr_segment in self.line_segments_at_hand[1:]:
                         # If any given segment's top part's top bound matches its neighbor's top part's top bound...
-                        if type(last_segment) == type(curr_segment) == self.FaceNode \
+                        if type(last_segment) == type(curr_segment) == self.Face \
                                 and last_segment.top.bound_t is curr_segment.top.bound_t:
                             # Set the last segment's top area's bounds to encompass the current segment's area
                             last_segment.top.bound_l = curr_segment.top.bound_l
@@ -249,7 +248,7 @@ class TrapezoidalMap:
                     last_segment = self.line_segments_at_hand[0]
                     for curr_segment in self.line_segments_at_hand[1:]:
                         # If any given segment's bot part's bot bound matches its neighbor's bot part's bot bound...
-                        if type(last_segment) == type(curr_segment) == self.FaceNode \
+                        if type(last_segment) == type(curr_segment) == self.Face \
                                 and last_segment.bot.bound_b is curr_segment.bot.bound_b:
                             # Set the last segment's bot area's bounds to encompass the current segment's area
                             last_segment.bot.bound_l = curr_segment.bot.bound_l
@@ -260,8 +259,8 @@ class TrapezoidalMap:
                         last_segment = curr_segment
 
     def add_face(self, f):
-        points = [Point(y, x) for y, x in f]
-        lines = [Line(points[i], points[(i + 1) % len(points)]) for i in range(len(points))]
+        points = [TrapezoidalMap.Vertex((y, x)) for y, x in f]
+        lines = [TrapezoidalMap.generate_half_edge_pair(points[i], points[(i + 1) % len(points)]) for i in range(len(points))]
         for line in lines:
             self.add_line_segment(line)
 
@@ -281,49 +280,66 @@ class TrapezoidalMap:
         self.search_tree.draw('points')
         self.printed_vertices_flag = False
 
-# # Start with a list of points
-# seeds = [Point(y, x) for y, x in set([(randint(0, wh_n), randint(0, wh_n)) for i in range(30)])]
-# print(', '.join([str(s) for s in seeds]))
-# def draw():
-#     clear()
-#     set_fill_color(0, 0, 0)
-#     set_stroke_color(0, 0, 0)
-#     for p in seeds:
-#         draw_circle(p.x * scalar + adj, p.y * scalar + adj, 3)
+
+if __name__ == "__main__":
+    # # Start with a list of points
+    # seeds = [Point(y, x) for y, x in set([(randint(0, wh_n), randint(0, wh_n)) for i in range(30)])]
+    # print(', '.join([str(s) for s in seeds]))
+    # def draw():
+    #     clear()
+    #     set_fill_color(0, 0, 0)
+    #     set_stroke_color(0, 0, 0)
+    #     for p in seeds:
+    #         draw_circle(p.x * scalar + adj, p.y * scalar + adj, 3)
+
+    print('Lines have been defined.')
+
+    test_case = "triangle"
+    if test_case == "triangle":
+        points = [(1, 6), (2, 2), (3, 4)]
+    elif test_case == "star":
+        points = [
+            (2.4, 3.5),
+            (0.5, 4),
+            (2, 2.5),
+            (1, 1),
+            (3, 2),
+            (5, 1),
+            (4, 2.5),
+            (5.5, 4),
+            (3.6, 3.5),
+            (3, 5.7),
+        ][:3]
+    else:
+        raise Exception("You have selected an invalid test case.")
+
+    trap_map = TrapezoidalMap()
+    trap_map.add_face(points)
+    print('Spawn lines have been added to the Trapezoidal Map.')
 
 
-print('Lines have been defined.')
-
-trap_map = TrapezoidalMap()
-triangle = [(1, 6), (2, 2), (3, 4)][::-1]
-star = [
-    (2.4, 3.5),
-    (0.5, 4),
-    (2, 2.5),
-    (1, 1),
-    (3, 2),
-    (5, 1),
-    (4, 2.5),
-    (5.5, 4),
-    (3.6, 3.5),
-    (3, 5.7),
-][:3]
-trap_map.add_face(triangle)
-print('Spawn lines have been added to the Trapezoidal Map.')
+    def click(x, y):
+        trap_map.click(DCEL.Vertex((DCEL.descale_loc(y), DCEL.descale_loc(x))))
 
 
-def click(x, y):
-    trap_map.click(Point(descale_loc(y), descale_loc(x)))
+    def unclick(x, y):
+        pass
 
 
-def unclick(x, y):
-    pass
+    def draw():
+        clear()
+        trap_map.draw()
 
 
-def draw():
-    clear()
-    trap_map.draw()
+    DCEL.line_side_offset = 5
+    DCEL.end_shortening = 20
+    DCEL.wh_pixels = 800
+    DCEL.adj = 100
+    min_y, min_x = min([y for y, x in points]), min([x for y, x in points])
+    max_y, max_x = max([y for y, x in points]), max([x for y, x in points])
+    DCEL.wh_n = max([y for y, x in points] + [x for x, y in points])
+    print("MinY, MinX, MaxY, MaxX", min_y, min_x, max_y, max_x, DCEL.wh_n)
+    DCEL.readjust()
 
-
-print("Commencing draw operations.")
-start_graphics(draw, width=wh_pixels, height=wh_pixels, mouse_press=click, mouse_release=unclick)
+    print("Commencing draw operations.")
+    start_graphics(draw, width=DCEL.wh_pixels, height=DCEL.wh_pixels, mouse_press=click, mouse_release=unclick)
