@@ -574,6 +574,7 @@ def get_text_width(string):
 def get_text_height():
     return canvas.get_text_height()
 
+
 # Main graphics loop
 
 # the frames parameters gives the number of frames to display on the
@@ -589,10 +590,8 @@ def start_graphics(draw_func=noop, frames=1, data=None, framerate=40,
                        width=width, height=height, title=title, framerate=framerate,
                        mouse_press=mouse_press, mouse_release=mouse_release, mouse_move=mouse_move,
                        key_press=key_press, key_release=key_release)
+    app.exec_()
 
-
-
-    sys.exit(app.exec_())
 
 def cs1_quit():
     print("cs1_quit called")

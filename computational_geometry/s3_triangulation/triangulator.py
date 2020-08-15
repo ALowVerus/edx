@@ -19,7 +19,7 @@ def generate_monotone_sections(dcel):
     It also returns a list of the segments required to generate those sections from the input polygon.
     """
     # Get the initial inner face
-    inner_face = dcel.list_contained_faces()[0]
+    inner_face = dcel.list_faces()[0]
     inner_face_edges = inner_face.border
 
     sources = [edge for edge in inner_face_edges if is_source(edge)]
@@ -195,9 +195,11 @@ def generate_monotone_sections(dcel):
             print('\n\n')
     # Monotonize one way
     monotonize_forward(inner_face)
+    # Reallocate faces to reflect newly-generated sub-faces
+    dcel.reallocate_faces()
     # Monotonize each sub-face the other way
     dcel.reflect()
-    inner_faces = dcel.list_contained_faces()
+    inner_faces = dcel.list_faces(include_outside=False)
     for face in inner_faces:
         monotonize_forward(face)
     dcel.reflect()
@@ -211,7 +213,7 @@ def monotone_x_triangulate(dcel):
     return a list of edges required to triangulate it.
     """
     print('\n\n\n\n')
-    for face in dcel.list_contained_faces():
+    for face in dcel.list_faces():
         print('Border of current face:', list(map(lambda e: str(e.origin), face.border)))
         # Get a pointers to the start and end of this polygon, as well as pointers that we will use to track traversal
         rooted_edge = face.inc
@@ -283,9 +285,11 @@ def monotone_x_triangulate(dcel):
             raise Exception("Something has gone wrong with resolving this face.")
     # Reallocate faces to the new triangulation
     dcel.reallocate_faces()
-    edges = dcel.generate_full_edge_list()
-    for edge in edges:
-        print(str(edge))
+    print("At the end of the day, the triangles are:")
+    for face in dcel.list_faces():
+        print("\t", str(face))
+    print("DONE TRIANGULATING!")
+    exit()
     # Return your final answer
     return []
 
@@ -298,7 +302,7 @@ def triangulate(dcel):
     The final result is a list of segments that will successfully triangulate the input polygon.
     """
     generate_monotone_sections(dcel)
-    for face in dcel.list_contained_faces():
+    for face in dcel.list_faces():
         print("BLARG: F:", [str(e) for e in face.border])
     for e in dcel.generate_full_edge_list(False):
         print("{:21}, {:21}, {:21}".format(str(e.pred), str(e), str(e.succ)))
@@ -341,7 +345,8 @@ def recursive_hull_triangulator(polygon_points):
 
 
 if __name__ == "__main__":
-    test = "basic_triangle_3"
+    test = "generated_example"
+    test = "facial_debugger"
     if test == "bottom_spans_under_initial_indent_test_case":
         start = (91, 104)
         end = (119, 119)
@@ -517,8 +522,8 @@ if __name__ == "__main__":
     print("WHN IS ", DCEL.wh_n)
     DCEL.readjust()
     # Label faces as convex or not
-    ids1 = set(map(id, dcel.list_contained_faces()))
-    ids2 = set(map(id, dcel.list_contained_faces()))
+    ids1 = set(map(id, dcel.list_faces()))
+    ids2 = set(map(id, dcel.list_faces()))
     dif12 = sorted(list(ids1.difference(ids2)))
     print("{} items:\n\t".format(len(dif12)), '\n\t '.join([str(n) for n in dif12]))
     dif21 = sorted(list(ids2.difference(ids1)))

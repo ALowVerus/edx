@@ -207,6 +207,14 @@ class DCEL:
             self.pred = pr
             v.inc = pr
 
+        # Splice a target half-edge in after a given root
+        @classmethod
+        def splice_in_after(cls, r, t):
+            r.succ.pred = t
+            t.succ = r.succ
+            r.succ = t
+            t.pred = r
+
         def delete_edge_merge_faces(self, merge_faces=True):
             # Get the faces
             f0, f1 = self.face, self.twin.face
@@ -240,7 +248,7 @@ class DCEL:
     class Vertex:
         color = None
 
-        def __init__(self, point):
+        def __init__(self, point=(None, None)):
             self.y, self.x = point
             # The first outgoing incident half-edge
             self.inc = None
@@ -597,12 +605,9 @@ class DCEL:
                 seen.add(id(edge))
 
     @classmethod
-    def generate_half_edge_pair(cls, phi, rho):
-        """
-        Return a pair of edges from p0 to p1, with appropriate origin and twinning.
-        """
-        pr = DCEL.HalfEdge()
-        rp = DCEL.HalfEdge()
+    def generate_half_edge_pair_generic(cls, phi=Vertex(), rho=Vertex(), HalfEdgeClass=HalfEdge):
+        pr = HalfEdgeClass()
+        rp = HalfEdgeClass()
         pr.twin = rp
         rp.twin = pr
         pr.origin = phi
@@ -614,6 +619,32 @@ class DCEL:
         phi.inc = pr
         rho.inc = rp
         return pr, rp
+
+    @classmethod
+    def generate_half_edge_pair(cls, phi, rho):
+        """
+        Return a pair of edges from p0 to p1, with appropriate origin and twinning.
+        """
+        return DCEL.generate_half_edge_pair_generic(phi, rho, DCEL.HalfEdge)
+
+    @classmethod
+    def generate_half_edge_sequence_along_vertices(cls, list_of_vertices, is_circular=False):
+        # Generate a list of edge pairs
+        edge_pairs = []
+        # Generate blank edge pairs for later use
+        for i in range(len(list_of_vertices) - 1 + is_circular):
+            phi, rho = list_of_vertices[i], list_of_vertices[(i + 1) % len(list_of_vertices)]
+            pr, rp = DCEL.generate_half_edge_pair(phi, rho)
+            edge_pairs.append((pr, rp))
+        # Link the edge pairs to each other
+        for i in range(len(edge_pairs) - 1 + is_circular):
+            (pr, rp), (rt, tr) = edge_pairs[i], edge_pairs[(i + 1) % len(edge_pairs)]
+            pr.succ = rt
+            rt.pred = pr
+            rp.pred = tr
+            tr.succ = rp
+        # Return the result
+        return edge_pairs
 
     def draw(self):
         # Set the drawing color for the vertices
