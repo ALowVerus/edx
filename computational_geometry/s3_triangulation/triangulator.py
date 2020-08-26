@@ -214,6 +214,10 @@ def monotone_x_triangulate(dcel):
     """
     print('\n\n\n\n')
     for face in dcel.list_faces():
+        print("\t", str(face))
+    print("Now monotonizing.")
+    print('\n\n\n\n')
+    for face in dcel.list_faces():
         print('Border of current face:', list(map(lambda e: str(e.origin), face.border)))
         # Get a pointers to the start and end of this polygon, as well as pointers that we will use to track traversal
         rooted_edge = face.inc
@@ -289,7 +293,8 @@ def monotone_x_triangulate(dcel):
     for face in dcel.list_faces():
         print("\t", str(face))
     print("DONE TRIANGULATING!")
-    exit()
+    if None in dcel.list_faces():
+        raise Exception("You somehow have a None face in your figure.")
     # Return your final answer
     return []
 
@@ -345,9 +350,40 @@ def recursive_hull_triangulator(polygon_points):
 
 
 if __name__ == "__main__":
-    test = "generated_example"
     test = "facial_debugger"
-    if test == "bottom_spans_under_initial_indent_test_case":
+    monotonizing = True
+    triangulating = False
+    if test == "pre_monotonized":
+        points = [(6,25), (4,18), (31,22), (25,30), (22,31), (10,42)]
+        """
+        4 items:
+            F: [(22, 31), (25, 6), (18, 4)] t
+            F: [(30, 25), (25, 6), (22, 31)] t
+            F: [(31, 22), (25, 6), (30, 25)] t
+            F: [(42, 10), (25, 6), (31, 22)] t
+        """
+        # points = [(6,8), (34,1), (58,17), (39,30), (37,40), (31,22), (4,18)]
+        # """
+        # 5 items:
+        #     F: [(17, 58), (8, 6), (1, 34)] t
+        #     F: [(18, 4), (17, 58), (22, 31)]
+        #     F: [(30, 39), (22, 31), (17, 58)]
+        #     F: [(40, 37), (22, 31), (30, 39)]
+        #     F: [(8, 6), (17, 58), (18, 4)]
+        # """
+
+        # Given:
+        # F: [(25, 6), (31, 22), (42, 10)]
+        # F: [(31, 22), (25, 6), (30, 25)]
+        # F: [(30, 25), (25, 6), (22, 31)]
+        # F: [(18, 4), (22, 31), (25, 6)]
+        # F: [(8, 6), (1, 34), (17, 58)]
+        # None
+        # F: [(30, 39), (22, 31), (17, 58)]
+        # F: [(40, 37), (22, 31), (30, 39)]
+        # F: [(8, 6), (17, 58), (18, 4)]
+        # F: [(1, 34), (17, 58), (8, 6)]
+    elif test == "bottom_spans_under_initial_indent_test_case":
         start = (91, 104)
         end = (119, 119)
         points = [
@@ -510,7 +546,11 @@ if __name__ == "__main__":
     # Generate a blank polygon, correctly oriented
     dcel = DCEL(points)
     # Triangulate said polygon
-    triangulate(dcel)
+    if monotonizing:
+        generate_monotone_sections(dcel)
+    # Monotonize if that's what you're testing
+    if triangulating:
+        monotone_x_triangulate(dcel)
     # Get an edge list from the polygon
     edge_list = dcel.generate_full_edge_list(including_outside=False)
     # Adjust the DCEL parameters to correctly display the chosen item

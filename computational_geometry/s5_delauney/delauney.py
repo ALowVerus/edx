@@ -238,7 +238,7 @@ def euclidean_travelling_salesman(euclidean_minimum_spanning_tree):
 
 
 if __name__ == "__main__":
-    test_case = "coinciding_points_error"
+    test_case = "random"
     if test_case == "simple_tri":
         points = [(5, 5), (20, 20), (15, 2)]
     elif test_case == "simple_quad":
@@ -262,8 +262,6 @@ if __name__ == "__main__":
         points = list({(randint(0, bound), randint(0, bound)) for i in range(count)})
     else:
         points = [(0, 0)]
-
-    points = [(0, 0), (20, 0), (0, 20), (20, 20)]
 
     print('\nPoints: {}\n'.format(str(points)))
     dcel = delauney_randomized_incremental_constructor(points)
