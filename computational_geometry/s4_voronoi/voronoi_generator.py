@@ -95,7 +95,7 @@ def voronoi_generator_from_delauney(delauney_dcel):
         # Find the centroid for the face
         x, y, r = DCEL.get_circle_from_three_points(v0, v1, v2)
         # Store the centroid as a vertex
-        centroid_vertex = DCEL.Vertex((y, x))
+        centroid_vertex = DCEL.Vertex((x, y))
         # Store the centroid
         centroids[key] = centroid_vertex
 

@@ -204,7 +204,6 @@ class RedBlackTree:
                     # print("Printing now!", self, replacement)
                     # print(id(self), id(self.parent), id(self.left), id(self.right))
                     # print(id(replacement), id(replacement.parent), id(replacement.left), id(replacement.right))
-                    self.tree.print_tree()
                     # Swap colors
                     self.color, replacement.color = replacement.color, self.color
                     # Get requisite variables
@@ -395,6 +394,7 @@ class RedBlackTree:
         return self.head.get_depth()
 
     def print_tree(self):
+        raise Exception()
         if self.head is None:
             print('Empty tree.')
         else:

@@ -1,5 +1,4 @@
 from collections import deque
-from computational_geometry.s1_convex_hull.hull_methods_2d import is_ccw_turn
 from computational_geometry.dcel import *
 from computational_geometry.b_tree_generic import RedBlackTree
 from cs1lib import *
@@ -13,7 +12,7 @@ is_stalagmite = lambda e: e.dx >= 0 and e.pred.dx < 0 and not e.is_ccw_turn
 is_stalactite = lambda e: e.dx < 0 and e.pred.dx >= 0 and not e.is_ccw_turn
 
 
-def generate_monotone_sections(dcel):
+def generate_monotone_sections(dcel, verbose=False):
     """
     This function takes in a polygon and returns a list of sections monotone with respect to x.
     It also returns a list of the segments required to generate those sections from the input polygon.
@@ -29,12 +28,13 @@ def generate_monotone_sections(dcel):
     stalagmites = [edge for edge in inner_face_edges if is_stalagmite(edge)]
     stalactites = [edge for edge in inner_face_edges if is_stalactite(edge)]
 
-    print(len(sources), "sources")
-    print(len(sinks), "sinks")
-    print(len(l_progress), "l_prog")
-    print(len(r_progress), "r_prog")
-    print(len(stalagmites), "stalagmites")
-    print(len(stalactites), "stalactites")
+    if verbose:
+        print(len(sources), "sources")
+        print(len(sinks), "sinks")
+        print(len(l_progress), "l_prog")
+        print(len(r_progress), "r_prog")
+        print(len(stalagmites), "stalagmites")
+        print(len(stalactites), "stalactites")
 
     sources_ids = {id(edge) for edge in sources}
     sinks_ids = {id(edge) for edge in sinks}
@@ -89,13 +89,13 @@ def generate_monotone_sections(dcel):
                 return 0
         t = RedBlackTree(cmp=cmp)
         d = {}
-        print()
         # Process each event
         for edge in sorted(edges, key=lambda e: (e.origin.x, e.origin.y)):
             ex, ey = edge.origin.x, edge.origin.y
             x_holder.x = ex
-            # Approach the point with the lowest yet-unhit x
-            t.print_tree()
+            if verbose:
+                # Approach the point with the lowest yet-unhit x
+                t.print_tree()
             # If a source is met, either generate a new BBST object
             if is_source(edge):
                 # Set the side edges to a newly-generated trapezoid
@@ -103,15 +103,18 @@ def generate_monotone_sections(dcel):
                 d[id(edge.pred)] = d[id(edge.succ)] = new_node
             # If a sink is met, kill a BBST object
             elif is_sink(edge):
-                print("Killing the sink at", ey, ex)
+                if verbose:
+                    print("Killing the sink at", ey, ex)
                 # Delete the trapezoid from the data structure
                 d[id(edge)].delete()
                 d.pop(id(edge))
             # If left progress is met, move the left side of the appropriate BBST object
             elif is_l_progress(edge):
-                print("Left!")
+                if verbose:
+                    print("Left!")
                 if id(edge) not in d:
-                    print("Could not find edge.")
+                    if verbose:
+                        print("Could not find edge.")
                 else:
                     # Find the trapezoid supported by incoming edge in the data structure
                     node = d[id(edge)]
@@ -123,9 +126,11 @@ def generate_monotone_sections(dcel):
                     d[id(edge.pred)] = d[id(right.succ)] = node
             # If right progress is met, move the right side of the appropriate BBST object
             elif is_r_progress(edge):
-                print("Right!")
+                if verbose:
+                    print("Right!")
                 if id(edge) not in d:
-                    print("Could not find edge.")
+                    if verbose:
+                        print("Could not find edge.")
                 else:
                     # Find the trapezoid supported by incoming edge in the data structure
                     node = d[id(edge)]
@@ -154,11 +159,13 @@ def generate_monotone_sections(dcel):
                 node_right = t.insert([edge.pred, edge, right])
                 d[id(left)]      = d[id(edge.succ)]  = node_left
                 d[id(edge.pred)] = d[id(right.succ)] = node_right
-                print("FOUND IT!", str(left), str(right))
+                if verbose:
+                    print("FOUND IT!", str(left), str(right))
                 # Generate two new half-edges in the graph so as to enclose the newly-generated subspace
                 pr, rp = DCEL.HalfEdge.link_edges(helper, edge)
                 pr.color = rp.color = (0, 0.5, 1)
-                print("Newly-generated edges are", str(pr), str(rp))
+                if verbose:
+                    print("Newly-generated edges are", str(pr), str(rp))
             # If a stalactite is met, merge two trapezoids into one
             elif is_stalactite(edge):
                 # Pop the trapezoid at hand from the data structure
@@ -176,23 +183,26 @@ def generate_monotone_sections(dcel):
                     left_side_node, right_side_node = node, node.right
                 else:
                     raise Exception("Your chosen side did not have a pairing match.")
-                print("Stalactite at", str(edge.origin), str(edge))
-                print("L:", [str(item) for item in left_side_node.value])
-                print("R:", [str(item) for item in right_side_node.value])
+                if verbose:
+                    print("Stalactite at", str(edge.origin), str(edge))
+                    print("L:", [str(item) for item in left_side_node.value])
+                    print("R:", [str(item) for item in right_side_node.value])
                 # Merge, but make no cut.
                 # You can proceed along a reversed image of the polygon to generate cuts in the reverse direction.
                 d.pop(id(right_side_node.value[0]))
                 right_side_node.value = [left_side_node.value[0], edge, right_side_node.value[2]]
-                print("F:", [str(item) for item in right_side_node.value])
+                if verbose:
+                    print("F:", [str(item) for item in right_side_node.value])
                 left_side_node.delete()
                 d[id(right_side_node.value[0])] = d[id(right_side_node.value[2].succ)] = right_side_node
             # If a non-stalagmite non-stalagtite is met, simply move on.
             else:
                 raise Exception("Invalid point & edge.", str(edge))
-            print(str(edge.origin))
-            for idn, node in d.items():
-                print('\t', str(obj(idn).origin), [str(edge.origin) for edge in node.value])
-            print('\n\n')
+            if verbose:
+                print(str(edge.origin))
+                for idn, node in d.items():
+                    print('\t', str(obj(idn).origin), [str(edge.origin) for edge in node.value])
+                print('\n\n')
     # Monotonize one way
     monotonize_forward(inner_face)
     # Reallocate faces to reflect newly-generated sub-faces
@@ -207,18 +217,20 @@ def generate_monotone_sections(dcel):
     dcel.reallocate_faces()
 
 
-def monotone_x_triangulate(dcel):
+def monotone_x_triangulate(dcel, verbose=False):
     """
     Given the in-order points of a polygon monotone with respect to x,
     return a list of edges required to triangulate it.
     """
-    print('\n\n\n\n')
+    if verbose:
+        print('\n\n\n\n')
+        for face in dcel.list_faces():
+            print("\t", str(face))
+        print("Now monotonizing.")
+        print('\n\n\n\n')
     for face in dcel.list_faces():
-        print("\t", str(face))
-    print("Now monotonizing.")
-    print('\n\n\n\n')
-    for face in dcel.list_faces():
-        print('Border of current face:', list(map(lambda e: str(e.origin), face.border)))
+        if verbose:
+            print('Border of current face:', list(map(lambda e: str(e.origin), face.border)))
         # Get a pointers to the start and end of this polygon, as well as pointers that we will use to track traversal
         rooted_edge = face.inc
         while not is_source(rooted_edge):
@@ -228,33 +240,36 @@ def monotone_x_triangulate(dcel):
 
         # Define two triangulating functions
         def resolve_left():
-            if len(q) >= 3 and is_ccw_turn(q[-1].origin.coord, q[-2].origin.coord, q[-3].origin.coord):
-                print("Resolving left")
-                while len(q) >= 3 and is_ccw_turn(q[-1].origin.coord, q[-2].origin.coord, q[-3].origin.coord):
-                    # Remove the second-to-last point from the equation by forming a triangle with it as a point on the hull
-                    a = q.pop()
-                    q.pop()
-                    c = q.pop()
-                    print("Adding edge from", str(a.origin), "to", str(c.origin))
-                    pr, rp = DCEL.HalfEdge.link_edges(a, c)
-                    pr.color = rp.color = (1, 0.5, 1)
-                    q.append(a)
-                    q.append(rp)
-                    print('\tQ is now', [str(e) for e in q])
+            hit = False
+            while len(q) >= 3 and DCEL.is_ccw_turn(q[-3].origin, q[-2].origin, q[-1].origin):
+                hit = True
+                # Remove the second-to-last point from the equation by forming a triangle with it as a point on the hull
+                a = q.pop()
+                q.pop()
+                c = q.pop()
+                if verbose:
+                    print("l: Adding edge from", str(a.origin), "to", str(c.origin))
+                pr, rp = DCEL.HalfEdge.link_edges(a, c)
+                pr.color = rp.color = (1, 0.5, 1)
+                q.append(rp)
+                q.append(a)
+            if hit:
                 resolve_right()
 
         def resolve_right():
-            if len(q) >= 3 and is_ccw_turn(q[2].origin.coord, q[1].origin.coord, q[0].origin.coord):
-                print('Resolving right')
-                while len(q) >= 3 and is_ccw_turn(q[2].origin.coord, q[1].origin.coord, q[0].origin.coord):
-                    # Remove the second-to-last point from the equation by forming a triangle with it as a point on the hull
-                    a = q.popleft()
-                    q.popleft()
-                    c = q.popleft()
-                    print("Adding edge from", str(a.origin), "to", str(c.origin))
-                    pr, rp = DCEL.HalfEdge.link_edges(a, c)
-                    pr.color = rp.color = (1, 0.5, 0.5)
-                    q.appendleft(pr)
+            hit = False
+            while len(q) >= 3 and DCEL.is_ccw_turn(q[0].origin, q[1].origin, q[2].origin):
+                hit = True
+                # Remove the second-to-last point from the equation by forming a triangle with it as a point on the hull
+                a = q.popleft()
+                q.popleft()
+                c = q[0]
+                if verbose:
+                    print("r: Adding edge from", str(a.origin), "to", str(c.origin))
+                pr, rp = DCEL.HalfEdge.link_edges(a, c)
+                pr.color = rp.color = (1, 0.5, 0.5)
+                q.appendleft(pr)
+            if hit:
                 resolve_left()
 
         # While not at the end of both chains...
@@ -267,51 +282,61 @@ def monotone_x_triangulate(dcel):
             for p0, p1 in current_edge_ends:
                 if (p1, p0) not in current_edge_ends:
                     raise Exception('You have failed to match your edges.\n' + '\n'.join([str(item) for item in sorted(current_edge_ends)]))
-            print(i, [str(e) for e in q])
+            if verbose:
+                print(i, [str(e) for e in q])
             i += 1
             # Resolve both sides to move the pointers up the queue
             resolve_right()
             resolve_left()
+            if verbose:
+                print(i, [str(e) for e in q])
             # print(is_sink(q[0].pred), is_sink(q[-1].succ), q[0].pred.origin.x, q[-1].succ.origin.x)
             if not is_sink(q[0].pred) and q[0].pred.origin.x <= q[-1].succ.origin.x:
-                print('LQueueing', str(q[0].pred))
+                if verbose:
+                    print('LQueueing', str(q[0].pred))
                 q.appendleft(q[0].pred)
             elif not is_sink(q[-1].succ) and q[0].pred.origin.x > q[-1].succ.origin.x:
-                print("RQueueing", str(q[-1].succ))
+                if verbose:
+                    print("RQueueing", str(q[-1].succ))
                 q.append(q[-1].succ)
             else:
-                print("Done is done!")
+                if verbose:
+                    print("Done is done!")
                 done = True
-        print(i, list(map(str, q)))
-        print("Triangulated!")
-        print('\n\n\n\n')
+        if verbose:
+            print(i, list(map(str, q)))
+            print("Triangulated!")
+            print('\n\n\n\n')
         if i == max_hit_count:
             raise Exception("Something has gone wrong with resolving this face.")
     # Reallocate faces to the new triangulation
     dcel.reallocate_faces()
-    print("At the end of the day, the triangles are:")
-    for face in dcel.list_faces():
-        print("\t", str(face))
-    print("DONE TRIANGULATING!")
-    if None in dcel.list_faces():
+    if verbose:
+        print("At the end of the day, the triangles are:")
+        for face in dcel.list_faces(include_outside=False):
+            print("\t", str(face))
+        print("DONE TRIANGULATING!")
+        print('OUTER:', str(dcel.outer))
+    if None in dcel.list_faces(include_outside=False):
         raise Exception("You somehow have a None face in your figure.")
     # Return your final answer
     return []
 
 
-def triangulate(dcel):
+def triangulate(dcel, verbose=False):
     """
     This function takes in a list of points, assumed to be the in-order points of a certain unholed polygon.
     This polygon input may not be convex, nor even necessarily monotone.
     The function partitions the inputs into monotone sections, then triangulates those now monotone sections.
     The final result is a list of segments that will successfully triangulate the input polygon.
     """
-    generate_monotone_sections(dcel)
-    for face in dcel.list_faces():
-        print("BLARG: F:", [str(e) for e in face.border])
-    for e in dcel.generate_full_edge_list(False):
-        print("{:21}, {:21}, {:21}".format(str(e.pred), str(e), str(e.succ)))
-    monotone_x_triangulate(dcel)
+    generate_monotone_sections(dcel, verbose=verbose)
+    if verbose:
+        for face in dcel.list_faces():
+            print("BLARG: F:", [str(e) for e in face.border])
+        for e in dcel.generate_full_edge_list(False):
+            print("{:21}, {:21}, {:21}".format(str(e.pred), str(e), str(e.succ)))
+    monotone_x_triangulate(dcel, verbose)
 
 
 def recursive_hull_triangulator(polygon_points):
@@ -350,39 +375,9 @@ def recursive_hull_triangulator(polygon_points):
 
 
 if __name__ == "__main__":
-    test = "facial_debugger"
-    monotonizing = True
-    triangulating = False
+    test = "oscillator"
     if test == "pre_monotonized":
         points = [(6,25), (4,18), (31,22), (25,30), (22,31), (10,42)]
-        """
-        4 items:
-            F: [(22, 31), (25, 6), (18, 4)] t
-            F: [(30, 25), (25, 6), (22, 31)] t
-            F: [(31, 22), (25, 6), (30, 25)] t
-            F: [(42, 10), (25, 6), (31, 22)] t
-        """
-        # points = [(6,8), (34,1), (58,17), (39,30), (37,40), (31,22), (4,18)]
-        # """
-        # 5 items:
-        #     F: [(17, 58), (8, 6), (1, 34)] t
-        #     F: [(18, 4), (17, 58), (22, 31)]
-        #     F: [(30, 39), (22, 31), (17, 58)]
-        #     F: [(40, 37), (22, 31), (30, 39)]
-        #     F: [(8, 6), (17, 58), (18, 4)]
-        # """
-
-        # Given:
-        # F: [(25, 6), (31, 22), (42, 10)]
-        # F: [(31, 22), (25, 6), (30, 25)]
-        # F: [(30, 25), (25, 6), (22, 31)]
-        # F: [(18, 4), (22, 31), (25, 6)]
-        # F: [(8, 6), (1, 34), (17, 58)]
-        # None
-        # F: [(30, 39), (22, 31), (17, 58)]
-        # F: [(40, 37), (22, 31), (30, 39)]
-        # F: [(8, 6), (17, 58), (18, 4)]
-        # F: [(1, 34), (17, 58), (8, 6)]
     elif test == "bottom_spans_under_initial_indent_test_case":
         start = (91, 104)
         end = (119, 119)
@@ -546,11 +541,7 @@ if __name__ == "__main__":
     # Generate a blank polygon, correctly oriented
     dcel = DCEL(points)
     # Triangulate said polygon
-    if monotonizing:
-        generate_monotone_sections(dcel)
-    # Monotonize if that's what you're testing
-    if triangulating:
-        monotone_x_triangulate(dcel)
+    triangulate(dcel)
     # Get an edge list from the polygon
     edge_list = dcel.generate_full_edge_list(including_outside=False)
     # Adjust the DCEL parameters to correctly display the chosen item
@@ -561,23 +552,6 @@ if __name__ == "__main__":
     DCEL.wh_n = max([y for y, x in points] + [x for y, x in points]) * 1.1
     print("WHN IS ", DCEL.wh_n)
     DCEL.readjust()
-    # Label faces as convex or not
-    ids1 = set(map(id, dcel.list_faces()))
-    ids2 = set(map(id, dcel.list_faces()))
-    dif12 = sorted(list(ids1.difference(ids2)))
-    print("{} items:\n\t".format(len(dif12)), '\n\t '.join([str(n) for n in dif12]))
-    dif21 = sorted(list(ids2.difference(ids1)))
-    print("{} items:\n\t".format(len(dif21)), '\n\t '.join([str(n) for n in dif21]))
-    same12 = sorted([n for n in ids1 | ids2 if n not in dif12 and n not in dif21])
-    print("{} items:\n\t".format(len(same12)), '\n\t '.join(sorted([str(obj(n)) for n in same12])))
-    print("HELLO")
-    # print(len(faces))
-    # for face in faces:
-    #     face.color = (1, 0, 1)
-    #     print(face.color)
-    # for face in faces:
-    #     print(face.color)
-    # Draw the completed result
     def draw():
         dcel.draw()
     start_graphics(draw, width=DCEL.wh_pixels, height=DCEL.wh_pixels)

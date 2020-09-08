@@ -40,6 +40,7 @@ class DCEL:
 
     def __init__(self, points=None, is_voronoi=False):
         self.is_voronoi = is_voronoi
+        self.outer = DCEL.Face()
         if points:
             # Ensure that the points are in CCW order
             min_point = min(points)
@@ -53,7 +54,6 @@ class DCEL:
             print("Making a CCW DCEL from points", points)
             # Generate a DCEL with two faces, one in, one out
             in_face = DCEL.Face()
-            out_face = DCEL.Face()
             vertices = [DCEL.Vertex(point) for point in points]
             lines = [DCEL.generate_half_edge_pair(vertices[i], vertices[(i + 1) % len(vertices)])
                      for i in range(len(vertices))]
@@ -62,7 +62,7 @@ class DCEL:
                 phi_curr, rho_curr = lines[i]
                 phi_next, rho_prev = lines[(i + 1) % len(lines)]
                 phi_curr.face = in_face
-                rho_curr.face = out_face
+                rho_curr.face = self.outer
                 phi_curr.succ = phi_next
                 phi_curr.pred = phi_prev
                 rho_curr.succ = rho_next
@@ -70,11 +70,8 @@ class DCEL:
                 phi_curr.color = (0.5, 0.5, 0.5)
                 rho_curr.color = (0.5, 0.5, 0.5)
             in_face.inc = lines[0][0]
-            out_face.inc = lines[0][1]
-            self.outer = out_face
-            self.hashed_outer_border = {str(e) for e in out_face.inc.linked_border}
-        else:
-            self.outer = DCEL.Face()
+            self.outer.inc = lines[0][1]
+            self.hashed_outer_border = {str(e) for e in self.outer.inc.linked_border}
 
     @classmethod
     def readjust(cls):
@@ -246,12 +243,12 @@ class DCEL:
                 return f0, f1
 
     class Vertex:
-        color = None
-
         def __init__(self, point=(None, None)):
             self.y, self.x = point
             # The first outgoing incident half-edge
             self.inc = None
+            # Provide a load spot
+            self.load = None
             # Allow color to be set on the fly
             self.color = (0, 0, 0)
 
@@ -262,6 +259,10 @@ class DCEL:
         @property
         def coord(self):
             return self.x, self.y
+
+        @property
+        def true_coord(self):
+            return self.y, self.x
 
         @property
         def neighboring_faces(self):
@@ -292,7 +293,7 @@ class DCEL:
 
         def draw(self):
             if (self.y, self.x) != (None, None):
-                r, g, b = DCEL.Vertex.color if DCEL.Vertex.color else self.color
+                r, g, b = self.color
                 set_stroke_color(r, g, b)
                 set_fill_color(r, g, b)
                 draw_circle(DCEL.scale_loc(self.x), DCEL.scale_loc(self.y), 3)
@@ -401,8 +402,10 @@ class DCEL:
         @property
         def centroid(self):
             border = self.border
-            return DCEL.Vertex((sum([e.origin.y for e in border]) / len(border),
-                                sum([e.origin.x for e in border]) / len(border)))
+            centroid = DCEL.Vertex((sum([e.origin.y for e in border]) / len(border),
+                                    sum([e.origin.x for e in border]) / len(border)))
+            centroid.load = self
+            return centroid
 
         def draw(self):
             r, g, b = self.color
@@ -560,7 +563,6 @@ class DCEL:
         return vertices
 
     def reflect(self):
-        print("Reflected polygon.")
         edge_list = self.generate_full_edge_list(including_outside=True)
         edge_list = sorted(edge_list, key=lambda e: (e.origin.y, e.origin.x))
         vertices_list = [edge.origin for edge in edge_list]
@@ -574,11 +576,13 @@ class DCEL:
             vertex.x *= -1
             vertex.y *= -1
 
-    def list_faces(self, include_outside=False):
-        edges = self.generate_full_edge_list()
+    def list_faces(self, include_outside=False, verbose=False):
+        edges = self.generate_full_edge_list(including_outside=include_outside)
         faces = []
         seen = set()
         for edge in edges:
+            if verbose:
+                print(str(edge), str(edge.face))
             face = edge.face
             if id(face) not in seen:
                 seen.add(id(edge.face))
@@ -591,16 +595,12 @@ class DCEL:
         while q:
             edge = q.pop()
             if id(edge) not in seen:
-                edges_in_face = [edge]
-                curr = edge.succ
-                while curr != edge:
-                    edges_in_face.append(curr)
-                    curr = curr.succ
+                edges_in_face = edge.linked_border
                 new_face = DCEL.Face()
                 new_face.inc = edge
                 for facial_edge in edges_in_face:
                     facial_edge.face = new_face
-                    q.append(facial_edge)
+                    q.append(facial_edge.twin)
                 new_face.update_convexity()
                 seen.add(id(edge))
 
@@ -647,11 +647,6 @@ class DCEL:
         return edge_pairs
 
     def draw(self):
-        # Set the drawing color for the vertices
-        if self.is_voronoi:
-            DCEL.Vertex.color = (0, 0, 0)
-        else:
-            DCEL.Vertex.color = (0, 0.7, 0)
         # Draw in turn the faces, edges, and vertices
         for face in self.list_faces():
             face.draw()
@@ -667,6 +662,24 @@ class DCEL:
                 draw_line(DCEL.min_x, DCEL.scale_loc(i), DCEL.max_x, DCEL.scale_loc(i))
             for face in self.list_faces():
                 face.load.draw()
+
+    def draw_dual(self):
+        face_pairs = []
+        seen_face_pairs = set()
+        faces = self.list_faces()
+        for f in faces:
+            for e in f.border:
+                if e.twin.face != self.outer:
+                    k = tuple(sorted([f, e.twin.face], key=id))
+                    if k not in seen_face_pairs:
+                        seen_face_pairs.add(k)
+                        face_pairs.append([f, e.twin.face])
+        centroids = {id(face): face.centroid for face in faces}
+        centroid_pairs = [[centroids[id(f0)], centroids[id(f1)]] for f0, f1 in face_pairs]
+        edge_pairs = [DCEL.generate_half_edge_pair(c0, c1) for c0, c1 in centroid_pairs]
+        for e0, e1 in edge_pairs:
+            e0.draw()
+            e1.draw()
 
     @classmethod
     def is_ccw_turn(cls, p0, p1, p2):
